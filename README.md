@@ -110,23 +110,26 @@ Deploy `packages/cf-worker-relay/worker.js` to your own Cloudflare Workers accou
 ## Local Development & Testing
 
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (recommended, uses bun.lock)
+bun install
+# Or with npm:
+# npm install --legacy-peer-deps
 
-# Run unit tests (attribution math, benchmarks, 7x6 matrix, snapshot deltas)
-npx tsx --test src/utils/analyticsMath.test.ts
+# Run unit tests (attribution math, benchmarks, 7x6 matrix, snapshot deltas, crypto vault)
+bun test src/utils/analyticsMath.test.ts src/utils/cryptoVault.test.ts
 
 # Start dev server (http://localhost:3000)
-npm run dev
+bun run dev
 
 # Typecheck & production build
-npm run lint
-npm run build
+bun run lint
+bun run build
 ```
 
 ---
 
 ## GitHub Pages Deployment
 
-The repository includes `.github/workflows/deploy.yml` configured with `vite.config.ts` (`base: './'`).
-Push to `main` (or enable **Settings → Pages → Source: GitHub Actions** in your repository) to build and publish `dist/` automatically to GitHub Pages.
+The repository includes `.github/workflows/deploy.yml` configured for **Bun** (`bun.lock`) and static deployment (`vite.config.ts` with `base: './'`).
+1. In your GitHub repository, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
+2. Push to `main` (or `master`), or trigger the workflow manually from the **Actions** tab to test, build, and publish `dist/` to GitHub Pages.

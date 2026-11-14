@@ -1,8 +1,8 @@
-name: Deploy TG Pulse to GitHub Pages
+name: Deploy TeleScope to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -19,12 +19,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
+          bun-version: latest
+      - name: Install dependencies
+        run: |
+          if [ -f bun.lock ] || [ -f bun.lockb ]; then
+            bun install --frozen-lockfile
+          else
+            bun install
+          fi
+      - name: Run unit tests
+        run: bun test src/utils/analyticsMath.test.ts src/utils/cryptoVault.test.ts
+      - name: Typecheck
+        run: bun run lint
+      - name: Build static bundle
+        run: bun run build
+      - name: Add .nojekyll for GitHub Pages
+        run: touch dist/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
