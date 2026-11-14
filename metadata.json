@@ -1,0 +1,6 @@
+{
+  "name": "TG Pulse — Telegram Channel Analytics",
+  "description": "Zero-backend, open-source Telegram channel analytics & share detective powered by MTProto in the browser with SOCKS5 proxy bridge support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

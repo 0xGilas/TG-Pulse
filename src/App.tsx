@@ -1,0 +1,1084 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Camera, Menu, RefreshCw } from 'lucide-react';
+import type {
+  ApiCredentials,
+  AuthStep,
+  ChannelAnalyticsBundle,
+  ChannelSnapshot,
+  ChannelSummary,
+  DailyDeltaRecord,
+  LanguageCode,
+  NetworkConfig,
+  ParsedStatsGraph,
+  PostRecord,
+  SessionPersistenceMode,
+} from './types/analytics';
+import { getTranslations } from './i18n/translations';
+import { getSampleDataset } from './data/sampleChannelData';
+import {
+  buildSnapshotFromPosts,
+  computeEvergreenRatio,
+  computeSnapshotDeltas,
+  formatDateKey,
+  groupAlbumPosts,
+} from './utils/analyticsMath';
+import {
+  clearSavedSession,
+  getSavedSessionMeta,
+  loadApiCredentials,
+  loadChannelSnapshotHistory,
+  loadEncryptedSessionBundle,
+  loadNetworkConfig,
+  saveApiCredentials,
+  saveChannelSnapshotHistory,
+  saveEncryptedSessionBundle,
+  saveNetworkConfig,
+  VaultError,
+  wipeAllVaultData,
+} from './utils/cryptoVault';
+import { telegramBridge } from './services/telegramBridge';
+import { AuthScreen } from './components/auth/AuthScreen';
+import { NetworkModal } from './components/auth/NetworkModal';
+import { Sidebar } from './components/layout/Sidebar';
+import { OverviewTab } from './components/dashboard/OverviewTab';
+import { ShareDetectiveTab } from './components/dashboard/ShareDetectiveTab';
+import { AudienceTab } from './components/dashboard/AudienceTab';
+import { PostDetailDrawer } from './components/inspector/PostDetailDrawer';
+import { SnapshotModal } from './components/dashboard/SnapshotModal';
+
+const DEFAULT_NETWORK: NetworkConfig = {
+  mode: 'direct',
+  socks5: {
+    bridgeUrl: 'ws://127.0.0.1:8787',
+    host: '127.0.0.1',
+    port: 1080,
+    username: '',
+    password: '',
+  },
+  cfRelayUrl: '',
+};
+
+const DEFAULT_API_CREDS: ApiCredentials = {
+  apiId: 0,
+  apiHash: '',
+};
+
+type DashboardTab = 'overview' | 'detective' | 'audience';
+
+function isValidApiCreds(creds?: ApiCredentials | null): creds is ApiCredentials {
+  return Boolean(creds && creds.apiId > 0 && creds.apiHash && creds.apiHash.trim().length >= 16);
+}
+
+function pickDefaultDateKey(graph?: ParsedStatsGraph): string | null {
+  if (!graph || graph.timestamps.length === 0) return null;
+  const shareSeries =
+    graph.series.find((s) => /share|forward/i.test(s.label) || s.key === 'y1') ?? graph.series[1];
+  if (!shareSeries) {
+    return formatDateKey(graph.timestamps[graph.timestamps.length - 1]);
+  }
+  let bestIdx = graph.timestamps.length - 1;
+  let bestVal = -1;
+  for (let i = 0; i < graph.timestamps.length; i += 1) {
+    const val = shareSeries.values[i] ?? 0;
+    if (val >= bestVal) {
+      bestVal = val;
+      bestIdx = i;
+    }
+  }
+  return formatDateKey(graph.timestamps[bestIdx]);
+}
+
+export function App() {
+  const [lang, setLang] = useState<LanguageCode>('fa');
+  const [reduceGlass, setReduceGlass] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('telescope_reduce_glass') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const t = getTranslations(lang);
+
+  // Network & API config
+  const [network, setNetwork] = useState<NetworkConfig>(DEFAULT_NETWORK);
+  const [networkModalOpen, setNetworkModalOpen] = useState(false);
+  const [apiCreds, setApiCreds] = useState<ApiCredentials>(DEFAULT_API_CREDS);
+  const [forceShowApiBox, setForceShowApiBox] = useState(false);
+
+  // Persistence consent (Default OFF = Ephemeral MemoryStorage!)
+  const [persistenceMode, setPersistenceMode] = useState<SessionPersistenceMode>('ephemeral');
+  const [vaultPin, setVaultPin] = useState('');
+  const [savedSessionMeta, setSavedSessionMeta] = useState<{ exists: boolean; hasPin: boolean }>({
+    exists: false,
+    hasPin: false,
+  });
+
+  // Live refs prevent stale closures during async MTProto QR/2FA authorization callbacks
+  const persistenceRef = useRef<{ mode: SessionPersistenceMode; pin: string }>({
+    mode: persistenceMode,
+    pin: vaultPin,
+  });
+  const apiCredsRef = useRef<ApiCredentials>(apiCreds);
+  const networkRef = useRef<NetworkConfig>(network);
+
+  useEffect(() => {
+    persistenceRef.current = { mode: persistenceMode, pin: vaultPin };
+  }, [persistenceMode, vaultPin]);
+
+  useEffect(() => {
+    apiCredsRef.current = apiCreds;
+  }, [apiCreds]);
+
+  useEffect(() => {
+    networkRef.current = network;
+  }, [network]);
+
+  // Auth flow state
+  const [authStep, setAuthStep] = useState<AuthStep>('idle');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [phoneState, setPhoneState] = useState<{ phone: string; phoneCodeHash: string }>({
+    phone: '',
+    phoneCodeHash: '',
+  });
+
+  // App workspace state
+  const [isSampleMode, setIsSampleMode] = useState<boolean>(false);
+  const [channels, setChannels] = useState<ChannelSummary[]>([]);
+  const [bundlesByChannel, setBundlesByChannel] = useState<Record<number, ChannelAnalyticsBundle>>({});
+  const [activeChannelId, setActiveChannelId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [selectedPostKey, setSelectedPostKey] = useState<string | null>(null);
+  const [snapshotModalOpen, setSnapshotModalOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [syncingChannel, setSyncingChannel] = useState(false);
+  const [scanProgressCount, setScanProgressCount] = useState(0);
+  const [scanningAttribution, setScanningAttribution] = useState(false);
+  const [attributionProgress, setAttributionProgress] = useState<{
+    completed: number;
+    total: number;
+  } | null>(null);
+  const [loadingPostDetails, setLoadingPostDetails] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+
+  const toggleReduceGlass = useCallback(() => {
+    setReduceGlass((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('telescope_reduce_glass', next ? '1' : '0');
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  }, []);
+
+  // Sync HTML dir/lang attributes
+  useEffect(() => {
+    document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
+    document.documentElement.lang = lang;
+  }, [lang]);
+
+  // Escape key closes modals/drawers cleanly
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedPostKey(null);
+        setSnapshotModalOpen(false);
+        setNetworkModalOpen(false);
+        setMobileSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Load saved non-sensitive settings & check if encrypted session exists
+  useEffect(() => {
+    loadNetworkConfig().then((cfg) => {
+      if (cfg) {
+        setNetwork(cfg);
+        networkRef.current = cfg;
+      }
+    });
+    loadApiCredentials().then((creds) => {
+      if (creds) {
+        setApiCreds(creds);
+        apiCredsRef.current = creds;
+      }
+    });
+    getSavedSessionMeta().then((meta) => {
+      setSavedSessionMeta({ exists: meta.exists, hasPin: meta.hasPin });
+    });
+  }, []);
+
+  const enterSampleMode = useCallback(() => {
+    const sample = getSampleDataset();
+    const firstChannelId = sample.channels[0].id;
+    const firstBundle = sample.bundles[firstChannelId];
+    setIsSampleMode(true);
+    setChannels(sample.channels);
+    setBundlesByChannel(sample.bundles);
+    setActiveChannelId(firstChannelId);
+    setSelectedDateKey(pickDefaultDateKey(firstBundle?.overview.interactionsGraph));
+    setActiveTab('overview');
+    setAuthStep('authorized');
+    setAuthError(null);
+  }, []);
+
+  // Support ?autostart=1 for automated UI testing
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('autostart') === '1') {
+      enterSampleMode();
+    }
+  }, [enterSampleMode]);
+
+  const persistSessionIfConsented = useCallback(async () => {
+    const current = persistenceRef.current;
+    if (current.mode !== 'vault') return;
+    try {
+      const { sessionString } = await telegramBridge.exportSession();
+      const meta = await saveEncryptedSessionBundle(
+        {
+          sessionString,
+          apiCreds: apiCredsRef.current,
+          network: networkRef.current,
+        },
+        current.pin,
+      );
+      setSavedSessionMeta({ exists: true, hasPin: meta.hasPin });
+    } catch (err) {
+      setLiveError(
+        err instanceof Error
+          ? `Session vault save warning: ${err.message}`
+          : 'Failed to encrypt session to local browser vault.',
+      );
+    }
+  }, []);
+
+  const loadLiveChannelBundle = useCallback(async (channelId: number) => {
+    setSyncingChannel(true);
+    setScanProgressCount(0);
+    setLiveError(null);
+    try {
+      const res = await telegramBridge.fetchChannelAnalytics(channelId, 400);
+      const recentSet = new Set(res.overview.recentPostIds);
+      const grouped = groupAlbumPosts(res.rawMessages, recentSet);
+
+      const history = await loadChannelSnapshotHistory(channelId);
+      const prevSnapshot = history?.latestSnapshot ?? null;
+      const cachedPostStats = history?.postStatsByPost ?? {};
+      const postsWithDeltas = computeSnapshotDeltas(grouped, prevSnapshot).map((p) => {
+        const cached = cachedPostStats[p.key];
+        if (!cached) return p;
+        const pub = Math.min(p.forwards, cached.publicSharesTotal ?? cached.publicForwards.length);
+        return {
+          ...p,
+          publicSharesCount: pub,
+          privateSharesCount: Math.max(0, p.forwards - pub),
+          evergreenShareRatio: computeEvergreenRatio(p.date, cached.dailyBreakdown),
+        };
+      });
+
+      const todayKey = formatDateKey(Date.now());
+      const newDailyDeltas: DailyDeltaRecord[] = [...(history?.dailyDeltas ?? [])];
+      if (prevSnapshot) {
+        for (const post of postsWithDeltas) {
+          if (post.deltaShares > 0) {
+            newDailyDeltas.push({
+              dateKey: todayKey,
+              postKey: post.key,
+              primaryId: post.primaryId,
+              deltaShares: post.deltaShares,
+              deltaViews: post.deltaViews,
+            });
+          }
+        }
+      }
+
+      const nextSnapshot = buildSnapshotFromPosts(
+        res.channel.id,
+        res.channel.membersCount,
+        postsWithDeltas,
+      );
+      await saveChannelSnapshotHistory(channelId, {
+        latestSnapshot: nextSnapshot,
+        dailyDeltas: newDailyDeltas.slice(-2000),
+        postStatsByPost: cachedPostStats,
+      });
+
+      const publicForwardsByPost: ChannelAnalyticsBundle['publicForwardsByPost'] = {};
+      for (const [k, v] of Object.entries(cachedPostStats)) {
+        if (v.publicForwards.length > 0) {
+          publicForwardsByPost[k] = v.publicForwards;
+        }
+      }
+
+      const bundle: ChannelAnalyticsBundle = {
+        channel: res.channel,
+        overview: res.overview,
+        posts: postsWithDeltas,
+        dailyDeltas: newDailyDeltas,
+        publicForwardsByPost,
+        postStatsByPost: cachedPostStats,
+        lastSnapshotAt: prevSnapshot?.capturedAt ?? nextSnapshot.capturedAt,
+        scanStatus: {
+          scannedCount: res.rawMessages.length,
+          attributedPostsCount: Object.keys(cachedPostStats).length,
+          isComplete: Object.keys(cachedPostStats).length >= postsWithDeltas.length,
+        },
+      };
+
+      setBundlesByChannel((prev) => ({ ...prev, [channelId]: bundle }));
+      setSelectedDateKey(pickDefaultDateKey(res.overview.interactionsGraph));
+    } catch (err) {
+      setLiveError(err instanceof Error ? err.message : 'Failed to sync channel');
+    } finally {
+      setSyncingChannel(false);
+    }
+  }, []);
+
+  const handleAuthorized = useCallback(
+    async (options?: { skipPersist?: boolean }) => {
+      setAuthStep('authorized');
+      setAuthError(null);
+      setLiveError(null);
+      if (!options?.skipPersist) {
+        await persistSessionIfConsented();
+      }
+      try {
+        const chList = await telegramBridge.getChannels();
+        setChannels(chList);
+        if (chList.length > 0) {
+          setActiveChannelId(chList[0].id);
+          await loadLiveChannelBundle(chList[0].id);
+        }
+      } catch (err) {
+        setLiveError(err instanceof Error ? err.message : 'Failed to load channels');
+      }
+    },
+    [persistSessionIfConsented, loadLiveChannelBundle],
+  );
+
+  // Wire worker event listeners
+  useEffect(() => {
+    telegramBridge.setListeners({
+      onQrUpdated: (url) => {
+        setQrUrl(url);
+        setAuthStep('qr_ready');
+      },
+      onQrScanned: () => {
+        setAuthStep('qr_scanned');
+      },
+      onQrPasswordNeeded: () => {
+        setAuthStep('password_needed');
+      },
+      onAuthorized: () => {
+        handleAuthorized();
+      },
+      onScanProgress: (_chId, count) => {
+        setScanProgressCount(count);
+      },
+      onAttributionProgress: (_chId, completed, total) => {
+        setAttributionProgress({ completed, total });
+      },
+      onLiveForwardsUpdate: (channelId, msgId, forwards) => {
+        setBundlesByChannel((prev) => {
+          const current = prev[channelId];
+          if (!current) return prev;
+          const todayKey = formatDateKey(Date.now());
+          const updatedPosts = current.posts.map((p) => {
+            if (!p.messageIds.includes(msgId)) return p;
+            const diff = Math.max(0, forwards - p.forwards);
+            const nextForwards = Math.max(p.forwards, forwards);
+            return {
+              ...p,
+              forwards: nextForwards,
+              privateSharesCount: Math.max(0, nextForwards - p.publicSharesCount),
+              deltaShares: p.deltaShares + diff,
+            };
+          });
+          const target = current.posts.find((p) => p.messageIds.includes(msgId));
+          const updatedDeltas =
+            target && forwards > target.forwards
+              ? [
+                  ...current.dailyDeltas,
+                  {
+                    dateKey: todayKey,
+                    postKey: target.key,
+                    primaryId: target.primaryId,
+                    deltaShares: forwards - target.forwards,
+                    deltaViews: 0,
+                  },
+                ]
+              : current.dailyDeltas;
+
+          return {
+            ...prev,
+            [channelId]: {
+              ...current,
+              posts: updatedPosts,
+              dailyDeltas: updatedDeltas,
+            },
+          };
+        });
+      },
+    });
+  }, [handleAuthorized]);
+
+  const validateApiCreds = (credsToCheck: ApiCredentials = apiCreds): ApiCredentials | null => {
+    if (!isValidApiCreds(credsToCheck)) {
+      setForceShowApiBox(true);
+      setAuthError(
+        lang === 'fa'
+          ? 'لطفاً ابتدا API ID و API Hash معتبر خودتان را از my.telegram.org در بخش تنظیمات API وارد کنید.'
+          : 'Please enter a valid API ID and API Hash from my.telegram.org inside Custom API Credentials.',
+      );
+      return null;
+    }
+    setForceShowApiBox(false);
+    return credsToCheck;
+  };
+
+  const handleStartQr = async () => {
+    const creds = validateApiCreds();
+    if (!creds) return;
+    setAuthError(null);
+    setAuthStep('connecting');
+    try {
+      await telegramBridge.init(creds, network);
+      await telegramBridge.startQr();
+    } catch (err) {
+      setAuthStep('idle');
+      setAuthError(err instanceof Error ? err.message : 'QR login failed');
+    }
+  };
+
+  const handleSendCode = async (phone: string) => {
+    const creds = validateApiCreds();
+    if (!creds) return;
+    setAuthError(null);
+    setAuthStep('connecting');
+    try {
+      await telegramBridge.init(creds, network);
+      const res = await telegramBridge.sendCode(phone.trim());
+      if (res.alreadyAuthorized) {
+        await handleAuthorized();
+      } else {
+        setPhoneState({ phone: phone.trim(), phoneCodeHash: res.phoneCodeHash });
+        setAuthStep('code_sent');
+      }
+    } catch (err) {
+      setAuthStep('idle');
+      setAuthError(err instanceof Error ? err.message : 'Failed to send code');
+    }
+  };
+
+  const handleVerifyCode = async (code: string) => {
+    setAuthError(null);
+    try {
+      const res = await telegramBridge.signIn(
+        phoneState.phone,
+        phoneState.phoneCodeHash,
+        code.trim(),
+      );
+      if (res.status === 'password_needed') {
+        setAuthStep('password_needed');
+      }
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Invalid confirmation code');
+    }
+  };
+
+  const handleCheckPassword = async (password: string) => {
+    setAuthError(null);
+    try {
+      await telegramBridge.checkPassword(password);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Invalid 2FA password');
+    }
+  };
+
+  const handleUnlockSavedSession = async (pin?: string) => {
+    setAuthError(null);
+    setAuthStep('connecting');
+    try {
+      const bundle = await loadEncryptedSessionBundle(pin);
+
+      // Automatically restore API credentials & network from the encrypted vault if needed
+      let effectiveCreds: ApiCredentials = apiCredsRef.current;
+      if (!isValidApiCreds(effectiveCreds) && isValidApiCreds(bundle.apiCreds)) {
+        effectiveCreds = bundle.apiCreds;
+        setApiCreds(effectiveCreds);
+        apiCredsRef.current = effectiveCreds;
+        saveApiCredentials(effectiveCreds).catch(() => {});
+      }
+
+      if (!validateApiCreds(effectiveCreds)) {
+        setAuthStep('idle');
+        return;
+      }
+
+      let effectiveNetwork = networkRef.current;
+      if (bundle.network && effectiveNetwork.mode === 'direct' && bundle.network.mode !== 'direct') {
+        effectiveNetwork = bundle.network;
+        setNetwork(effectiveNetwork);
+        networkRef.current = effectiveNetwork;
+        saveNetworkConfig(effectiveNetwork).catch(() => {});
+      }
+
+      const res = await telegramBridge.init(effectiveCreds, effectiveNetwork, bundle.sessionString);
+      if (res.authorized) {
+        const usedPin = (pin ?? '').trim();
+        persistenceRef.current = { mode: 'vault', pin: usedPin };
+        setPersistenceMode('vault');
+        setVaultPin(usedPin);
+        await handleAuthorized({ skipPersist: true });
+      } else {
+        setAuthStep('idle');
+        setAuthError(
+          res.reason ? `${t.vaultRevokedError} (${res.reason})` : t.vaultRevokedError,
+        );
+      }
+    } catch (err) {
+      setAuthStep('idle');
+      if (err instanceof VaultError) {
+        if (err.code === 'PIN_REQUIRED') {
+          setAuthError(t.vaultPinRequiredError);
+          return;
+        }
+        if (err.code === 'WRONG_PIN') {
+          setAuthError(t.vaultWrongPinError);
+          return;
+        }
+        if (err.code === 'SESSION_NOT_FOUND') {
+          setSavedSessionMeta({ exists: false, hasPin: false });
+          setAuthError(err.message);
+          return;
+        }
+        setAuthError(err.message);
+        return;
+      }
+      setAuthError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to reconnect to Telegram. Check your network/proxy settings.',
+      );
+    }
+  };
+
+  const handleSaveSessionToVault = async (pin: string) => {
+    const { sessionString } = await telegramBridge.exportSession();
+    const meta = await saveEncryptedSessionBundle(
+      {
+        sessionString,
+        apiCreds: apiCredsRef.current,
+        network: networkRef.current,
+      },
+      pin,
+    );
+    persistenceRef.current = { mode: 'vault', pin: pin.trim() };
+    setPersistenceMode('vault');
+    setVaultPin(pin.trim());
+    setSavedSessionMeta({ exists: true, hasPin: meta.hasPin });
+  };
+
+  const handleDiscardSavedSession = async () => {
+    await clearSavedSession();
+    setSavedSessionMeta({ exists: false, hasPin: false });
+  };
+
+  const handleLogout = async () => {
+    if (!isSampleMode) {
+      await telegramBridge.logoutAndTerminate();
+      await clearSavedSession();
+      setSavedSessionMeta({ exists: false, hasPin: false });
+    }
+    setIsSampleMode(false);
+    setChannels([]);
+    setBundlesByChannel({});
+    setActiveChannelId(null);
+    setSelectedPostKey(null);
+    setSelectedDateKey(null);
+    setQrUrl(null);
+    setAuthStep('idle');
+    setAuthError(null);
+  };
+
+  const activeBundle = activeChannelId ? bundlesByChannel[activeChannelId] ?? null : null;
+
+  const selectedPost: PostRecord | null = useMemo(() => {
+    if (!activeBundle || !selectedPostKey) return null;
+    return activeBundle.posts.find((p) => p.key === selectedPostKey) ?? null;
+  }, [activeBundle, selectedPostKey]);
+
+  const handleSelectChannel = async (channelId: number) => {
+    setActiveChannelId(channelId);
+    setSelectedPostKey(null);
+    const existing = bundlesByChannel[channelId];
+    if (existing) {
+      setSelectedDateKey(pickDefaultDateKey(existing.overview.interactionsGraph));
+    } else if (!isSampleMode) {
+      await loadLiveChannelBundle(channelId);
+    }
+  };
+
+  const handleLoadLivePostDetails = async (post: PostRecord) => {
+    if (!activeBundle || isSampleMode) return;
+    setLoadingPostDetails(true);
+    try {
+      const details = await telegramBridge.fetchPostDetails(
+        activeBundle.channel.id,
+        post.primaryId,
+        activeBundle.channel.statsDc,
+        post.key,
+      );
+      const evergreen = computeEvergreenRatio(post.date, details.dailyBreakdown);
+      const pubCount = Math.min(
+        post.forwards,
+        details.publicSharesTotal ?? details.publicForwards.length,
+      );
+
+      setBundlesByChannel((prev) => {
+        const cur = prev[activeBundle.channel.id];
+        if (!cur) return prev;
+        const nextPostStats = { ...cur.postStatsByPost, [post.key]: details };
+        const nextPosts = cur.posts.map((p) =>
+          p.key === post.key
+            ? {
+                ...p,
+                publicSharesCount: pubCount,
+                privateSharesCount: Math.max(0, p.forwards - pubCount),
+                evergreenShareRatio: evergreen,
+              }
+            : p,
+        );
+        return {
+          ...prev,
+          [activeBundle.channel.id]: {
+            ...cur,
+            posts: nextPosts,
+            postStatsByPost: nextPostStats,
+            publicForwardsByPost: {
+              ...cur.publicForwardsByPost,
+              [post.key]: details.publicForwards,
+            },
+            scanStatus: {
+              ...cur.scanStatus,
+              attributedPostsCount: Object.keys(nextPostStats).length,
+            },
+          },
+        };
+      });
+    } finally {
+      setLoadingPostDetails(false);
+    }
+  };
+
+  const handleScanDateAttribution = async () => {
+    if (!activeBundle || isSampleMode || scanningAttribution) return;
+    setScanningAttribution(true);
+    setAttributionProgress(null);
+    setLiveError(null);
+    try {
+      const candidates = activeBundle.posts
+        .filter((p) => !activeBundle.postStatsByPost[p.key] && (p.forwards > 0 || p.views > 0))
+        .map((p) => ({
+          key: p.key,
+          primaryId: p.primaryId,
+          date: p.date,
+          forwards: p.forwards,
+          views: p.views,
+        }));
+
+      const results = await telegramBridge.scanDateAttribution(
+        activeBundle.channel.id,
+        candidates,
+        activeBundle.channel.statsDc,
+        40,
+      );
+
+      setBundlesByChannel((prev) => {
+        const cur = prev[activeBundle.channel.id];
+        if (!cur) return prev;
+
+        const nextStats = { ...cur.postStatsByPost };
+        const nextPubForwards = { ...cur.publicForwardsByPost };
+        const resultByKey = new Map(results.map((r) => [r.postKey, r]));
+
+        for (const r of results) {
+          nextStats[r.postKey] = r.details;
+          if (r.details.publicForwards.length > 0) {
+            nextPubForwards[r.postKey] = r.details.publicForwards;
+          }
+        }
+
+        const nextPosts = cur.posts.map((p) => {
+          const item = resultByKey.get(p.key);
+          if (!item) return p;
+          const pub = Math.min(
+            p.forwards,
+            item.details.publicSharesTotal ?? item.details.publicForwards.length,
+          );
+          return {
+            ...p,
+            publicSharesCount: pub,
+            privateSharesCount: Math.max(0, p.forwards - pub),
+            evergreenShareRatio: item.evergreenRatio,
+          };
+        });
+
+        saveChannelSnapshotHistory(cur.channel.id, {
+          latestSnapshot: buildSnapshotFromPosts(
+            cur.channel.id,
+            cur.channel.membersCount,
+            nextPosts,
+          ),
+          dailyDeltas: cur.dailyDeltas,
+          postStatsByPost: nextStats,
+        }).catch(() => {});
+
+        return {
+          ...prev,
+          [cur.channel.id]: {
+            ...cur,
+            posts: nextPosts,
+            postStatsByPost: nextStats,
+            publicForwardsByPost: nextPubForwards,
+            scanStatus: {
+              ...cur.scanStatus,
+              attributedPostsCount: Object.keys(nextStats).length,
+              isComplete: Object.keys(nextStats).length >= nextPosts.length,
+            },
+          },
+        };
+      });
+    } catch (err) {
+      setLiveError(err instanceof Error ? err.message : 'Failed to scan message stats');
+    } finally {
+      setScanningAttribution(false);
+      setAttributionProgress(null);
+    }
+  };
+
+  const handleCaptureSnapshot = async () => {
+    if (!activeBundle) return;
+    const snap = buildSnapshotFromPosts(
+      activeBundle.channel.id,
+      activeBundle.channel.membersCount,
+      activeBundle.posts,
+    );
+    await saveChannelSnapshotHistory(activeBundle.channel.id, {
+      latestSnapshot: snap,
+      dailyDeltas: activeBundle.dailyDeltas,
+      postStatsByPost: activeBundle.postStatsByPost,
+    });
+    setBundlesByChannel((prev) => ({
+      ...prev,
+      [activeBundle.channel.id]: {
+        ...activeBundle,
+        lastSnapshotAt: snap.capturedAt,
+      },
+    }));
+  };
+
+  const handleImportSnapshot = async (snapshot: ChannelSnapshot) => {
+    if (!activeBundle) return;
+    const recalculated = computeSnapshotDeltas(activeBundle.posts, snapshot);
+    const todayKey = formatDateKey(Date.now());
+    const extraDeltas: DailyDeltaRecord[] = recalculated
+      .filter((p) => p.deltaShares > 0)
+      .map((p) => ({
+        dateKey: todayKey,
+        postKey: p.key,
+        primaryId: p.primaryId,
+        deltaShares: p.deltaShares,
+        deltaViews: p.deltaViews,
+      }));
+
+    const mergedDeltas = [...activeBundle.dailyDeltas, ...extraDeltas];
+    await saveChannelSnapshotHistory(activeBundle.channel.id, {
+      latestSnapshot: snapshot,
+      dailyDeltas: mergedDeltas,
+      postStatsByPost: activeBundle.postStatsByPost,
+    });
+    setBundlesByChannel((prev) => ({
+      ...prev,
+      [activeBundle.channel.id]: {
+        ...activeBundle,
+        posts: recalculated,
+        dailyDeltas: mergedDeltas,
+        lastSnapshotAt: snapshot.capturedAt,
+      },
+    }));
+  };
+
+  const handleWipeVault = async () => {
+    await wipeAllVaultData();
+    setSavedSessionMeta({ exists: false, hasPin: false });
+    setPersistenceMode('ephemeral');
+    setVaultPin('');
+  };
+
+  if (authStep !== 'authorized') {
+    return (
+      <>
+        <AuthScreen
+          lang={lang}
+          onToggleLang={() => setLang((l) => (l === 'fa' ? 'en' : 'fa'))}
+          reduceGlass={reduceGlass}
+          network={network}
+          onOpenNetworkModal={() => setNetworkModalOpen(true)}
+          apiCreds={apiCreds}
+          onChangeApiCreds={(next) => {
+            setApiCreds(next);
+            apiCredsRef.current = next;
+            saveApiCredentials(next).catch(() => {});
+          }}
+          persistenceMode={persistenceMode}
+          vaultPin={vaultPin}
+          onChangePersistence={(mode, pin) => {
+            persistenceRef.current = { mode, pin };
+            setPersistenceMode(mode);
+            setVaultPin(pin);
+          }}
+          savedSessionMeta={savedSessionMeta}
+          onUnlockSavedSession={handleUnlockSavedSession}
+          onDiscardSavedSession={handleDiscardSavedSession}
+          authStep={authStep}
+          authError={authError}
+          forceShowApiBox={forceShowApiBox}
+          qrUrl={qrUrl}
+          onStartQr={handleStartQr}
+          onSendCode={handleSendCode}
+          onVerifyCode={handleVerifyCode}
+          onCheckPassword={handleCheckPassword}
+          onResetAuth={() => {
+            setAuthStep('idle');
+            setAuthError(null);
+            setQrUrl(null);
+            telegramBridge.abortQr().catch(() => {});
+          }}
+          onEnterSampleMode={enterSampleMode}
+        />
+
+        <NetworkModal
+          open={networkModalOpen}
+          config={network}
+          lang={lang}
+          onClose={() => setNetworkModalOpen(false)}
+          onSave={(next) => {
+            setNetwork(next);
+            networkRef.current = next;
+            saveNetworkConfig(next).catch(() => {});
+          }}
+        />
+      </>
+    );
+  }
+
+  return (
+    <div className={`min-h-screen bg-[#0e1621] text-[#f5f7fa] flex ${reduceGlass ? 'reduce-glass' : ''}`}>
+      <Sidebar
+        lang={lang}
+        channels={channels}
+        activeChannelId={activeChannelId}
+        onSelectChannel={handleSelectChannel}
+        isSampleMode={isSampleMode}
+        persistenceMode={persistenceMode}
+        reduceGlass={reduceGlass}
+        onToggleReduceGlass={toggleReduceGlass}
+        onToggleLang={() => setLang((l) => (l === 'fa' ? 'en' : 'fa'))}
+        onOpenVaultModal={() => setSnapshotModalOpen(true)}
+        onLogout={handleLogout}
+        mobileOpen={mobileSidebarOpen}
+        onCloseMobile={() => setMobileSidebarOpen(false)}
+      />
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Sticky Frosted Header Bar */}
+        <header className="sticky top-0 z-30 tg-chrome-glass border-b">
+          <div className="px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+            {/* Zone 1: Channel Title */}
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => setMobileSidebarOpen(true)}
+                aria-label="Open channels menu"
+                className="lg:hidden rounded-lg p-1.5 text-[#7f91a4] hover:bg-white/10 hover:text-[#f5f7fa] cursor-pointer"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-sm sm:text-[15px] font-semibold text-[#f5f7fa] truncate">
+                  {activeBundle?.channel.title ?? t.appName}
+                </h1>
+              </div>
+            </div>
+
+            {/* Zone 2: Clean Segmented Tabs (Desktop) */}
+            <nav className="hidden md:flex items-center gap-1 rounded-lg bg-[#0e1621]/75 p-1 border border-white/[0.06]">
+              {(
+                [
+                  { id: 'overview', label: t.tabOverview },
+                  { id: 'detective', label: t.tabDetective },
+                  { id: 'audience', label: t.tabAudience },
+                ] as const
+              ).map((tab) => {
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`rounded-md px-3 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+                      active
+                        ? 'bg-[#3390ec] text-white'
+                        : 'text-[#7f91a4] hover:text-[#f5f7fa]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Zone 3: Primary Actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setSnapshotModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#17212b] px-3 py-1.5 text-xs font-medium text-[#f5f7fa] hover:bg-[#1e2c3a] whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Camera className="w-3.5 h-3.5 text-[#5eb5f7]" />
+                <span className="hidden sm:inline">{t.snapshotsBtn}</span>
+              </button>
+
+              {!isSampleMode && activeBundle && (
+                <button
+                  type="button"
+                  disabled={syncingChannel}
+                  onClick={() => loadLiveChannelBundle(activeBundle.channel.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#3390ec] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#2a80d6] disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncingChannel ? 'animate-spin' : ''}`} />
+                  <span>
+                    {syncingChannel
+                      ? `${t.syncingText} (${scanProgressCount})`
+                      : t.syncNowBtn}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Mobile Tab Strip */}
+          <div className="flex md:hidden border-t border-white/[0.06] px-3 py-1.5 gap-1 justify-between">
+            {(
+              [
+                { id: 'overview', label: lang === 'fa' ? 'نمای کلی' : 'Overview' },
+                { id: 'detective', label: lang === 'fa' ? 'پست‌ها و ویرال' : 'Posts' },
+                { id: 'audience', label: lang === 'fa' ? 'زمان‌بندی' : 'Timing' },
+              ] as const
+            ).map((tab) => {
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium whitespace-nowrap cursor-pointer ${
+                    active ? 'bg-[#3390ec] text-white' : 'text-[#7f91a4]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </header>
+
+        {/* Main Workspace Content */}
+        <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto space-y-4">
+          {liveError && (
+            <div
+              role="alert"
+              className="rounded-xl border border-[#e55353]/40 bg-[#e55353]/10 px-4 py-3 text-xs text-[#fca5a5]"
+            >
+              {liveError}
+            </div>
+          )}
+
+          {!activeBundle ? (
+            <div className="tg-panel rounded-2xl p-8 text-center text-sm text-[#7f91a4]">
+              {syncingChannel
+                ? `${t.syncingText} (${scanProgressCount})`
+                : t.noChannels}
+            </div>
+          ) : (
+            <>
+              {activeTab === 'overview' && (
+                <OverviewTab
+                  lang={lang}
+                  bundle={activeBundle}
+                  isSampleMode={isSampleMode}
+                  selectedDateKey={selectedDateKey}
+                  scanningAttribution={scanningAttribution}
+                  attributionProgress={attributionProgress}
+                  onScanAttribution={handleScanDateAttribution}
+                  onSelectDate={(dk) => setSelectedDateKey(dk)}
+                  onOpenPost={(p) => setSelectedPostKey(p.key)}
+                />
+              )}
+
+              {activeTab === 'detective' && (
+                <ShareDetectiveTab
+                  lang={lang}
+                  posts={activeBundle.posts}
+                  onOpenPost={(p) => setSelectedPostKey(p.key)}
+                />
+              )}
+
+              {activeTab === 'audience' && (
+                <AudienceTab lang={lang} bundle={activeBundle} />
+              )}
+            </>
+          )}
+        </main>
+      </div>
+
+      {/* Post Deep Inspector Drawer */}
+      <PostDetailDrawer
+        lang={lang}
+        post={selectedPost}
+        details={selectedPost && activeBundle ? activeBundle.postStatsByPost[selectedPost.key] : undefined}
+        publicForwards={
+          selectedPost && activeBundle
+            ? activeBundle.publicForwardsByPost[selectedPost.key] ?? []
+            : []
+        }
+        isSampleMode={isSampleMode}
+        loadingDetails={loadingPostDetails}
+        onLoadLiveDetails={handleLoadLivePostDetails}
+        onClose={() => setSelectedPostKey(null)}
+      />
+
+      {/* Snapshots & Vault Modal */}
+      <SnapshotModal
+        open={snapshotModalOpen}
+        lang={lang}
+        bundle={activeBundle}
+        isSampleMode={isSampleMode}
+        onClose={() => setSnapshotModalOpen(false)}
+        onCaptureSnapshot={handleCaptureSnapshot}
+        onImportSnapshot={handleImportSnapshot}
+        onSaveSessionToVault={handleSaveSessionToVault}
+        onWipeVault={handleWipeVault}
+      />
+    </div>
+  );
+}
+
+export default App;

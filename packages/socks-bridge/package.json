@@ -1,0 +1,16 @@
+{
+  "name": "@tg-pulse/socks-bridge",
+  "version": "1.0.0",
+  "description": "Minimal local WebSocket-to-SOCKS5 bridge for TG Pulse browser MTProto client",
+  "type": "module",
+  "bin": {
+    "tg-pulse-socks-bridge": "./index.mjs"
+  },
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "socks-proxy-agent": "^8.0.5",
+    "ws": "^8.18.0"
+  }
+}
