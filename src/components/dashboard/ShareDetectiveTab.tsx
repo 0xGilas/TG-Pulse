@@ -54,19 +54,21 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = ({
   };
 
   return (
-    <section className="tg-panel rounded-2xl overflow-hidden">
+    <section className="tg-panel rounded-xl overflow-hidden">
       {/* Integrated Filter & Search Bar */}
-      <div className="p-4 border-b border-white/[0.06] space-y-3">
+      <div className="p-4 border-b border-white/[0.07] space-y-3 bg-[#0B0F14]/45">
         <div className="flex flex-col sm:flex-row gap-3 justify-between">
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-[#5d6f82] absolute top-1/2 -translate-y-1/2 start-3 pointer-events-none" />
+          <div className="flex items-center flex-1 max-w-md rounded-lg border border-white/12 bg-[#0B0F14] overflow-hidden focus-within:border-[#2AABEE] focus-within:ring-2 focus-within:ring-[#2AABEE]/25 transition-colors">
+            <span className="ps-3 pe-1 text-[#586778] shrink-0 flex items-center pointer-events-none">
+              <Search className="w-4 h-4" />
+            </span>
             <input
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t.searchPlaceholder}
               aria-label={t.searchPlaceholder}
-              className="w-full rounded-lg border border-white/10 bg-[#111923] ps-9 pe-3 py-2 text-xs text-[#f5f7fa] placeholder:text-[#5d6f82] focus:border-[#3390ec] focus:outline-none"
+              className="flex-1 min-w-0 bg-transparent px-2.5 py-2 text-xs text-[#F0F4F8] placeholder:text-[#586778] border-0 focus:outline-none"
             />
           </div>
 
@@ -75,7 +77,7 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = ({
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as PostSortBy)}
               aria-label="Sort posts"
-              className="rounded-lg border border-white/10 bg-[#111923] px-3 py-2 text-xs text-[#f5f7fa] focus:border-[#3390ec] focus:outline-none cursor-pointer"
+              className="rounded-lg border border-white/12 bg-[#0B0F14] px-3 py-2 text-xs text-[#F0F4F8] focus:border-[#2AABEE] focus:outline-none cursor-pointer"
             >
               <option value="shares_desc">{t.sortShares}</option>
               <option value="share_rate_desc">{t.sortRate}</option>
@@ -96,8 +98,8 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = ({
                 onClick={() => setFilterMode(btn.id)}
                 className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   active
-                    ? 'bg-[#3390ec] text-white'
-                    : 'bg-[#111923] text-[#7f91a4] hover:text-[#f5f7fa] border border-white/[0.06]'
+                    ? 'bg-[#2AABEE] text-[#090C10] font-semibold'
+                    : 'bg-[#0B0F14] text-[#8B9BB0] hover:text-[#F0F4F8] border border-white/[0.08]'
                 }`}
               >
                 {btn.label}

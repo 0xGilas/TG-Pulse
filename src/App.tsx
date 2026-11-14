@@ -90,13 +90,6 @@ function pickDefaultDateKey(graph?: ParsedStatsGraph): string | null {
 
 export function App() {
   const [lang, setLang] = useState<LanguageCode>('fa');
-  const [reduceGlass, setReduceGlass] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('telescope_reduce_glass') === '1';
-    } catch {
-      return false;
-    }
-  });
   const t = getTranslations(lang);
 
   // Network & API config
@@ -161,18 +154,6 @@ export function App() {
   } | null>(null);
   const [loadingPostDetails, setLoadingPostDetails] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
-
-  const toggleReduceGlass = useCallback(() => {
-    setReduceGlass((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('telescope_reduce_glass', next ? '1' : '0');
-      } catch {
-        // ignore storage errors
-      }
-      return next;
-    });
-  }, []);
 
   // Sync HTML dir/lang attributes
   useEffect(() => {
@@ -828,7 +809,6 @@ export function App() {
         <AuthScreen
           lang={lang}
           onToggleLang={() => setLang((l) => (l === 'fa' ? 'en' : 'fa'))}
-          reduceGlass={reduceGlass}
           network={network}
           onOpenNetworkModal={() => setNetworkModalOpen(true)}
           apiCreds={apiCreds}
@@ -880,7 +860,7 @@ export function App() {
   }
 
   return (
-    <div className={`min-h-screen bg-[#0e1621] text-[#f5f7fa] flex ${reduceGlass ? 'reduce-glass' : ''}`}>
+    <div className="min-h-screen telescope-canvas text-[#F0F4F8] flex">
       <Sidebar
         lang={lang}
         channels={channels}
@@ -888,8 +868,6 @@ export function App() {
         onSelectChannel={handleSelectChannel}
         isSampleMode={isSampleMode}
         persistenceMode={persistenceMode}
-        reduceGlass={reduceGlass}
-        onToggleReduceGlass={toggleReduceGlass}
         onToggleLang={() => setLang((l) => (l === 'fa' ? 'en' : 'fa'))}
         onOpenVaultModal={() => setSnapshotModalOpen(true)}
         onLogout={handleLogout}
@@ -898,7 +876,7 @@ export function App() {
       />
 
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Sticky Frosted Header Bar */}
+        {/* Sticky Frosted Obsidian Header Bar */}
         <header className="sticky top-0 z-30 tg-chrome-glass border-b">
           <div className="px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
             {/* Zone 1: Channel Title */}
@@ -907,19 +885,19 @@ export function App() {
                 type="button"
                 onClick={() => setMobileSidebarOpen(true)}
                 aria-label="Open channels menu"
-                className="lg:hidden rounded-lg p-1.5 text-[#7f91a4] hover:bg-white/10 hover:text-[#f5f7fa] cursor-pointer"
+                className="lg:hidden rounded-lg p-1.5 text-[#8B9BB0] hover:bg-white/10 hover:text-[#F0F4F8] cursor-pointer"
               >
                 <Menu className="w-5 h-5" />
               </button>
               <div className="min-w-0">
-                <h1 className="text-sm sm:text-[15px] font-semibold text-[#f5f7fa] truncate">
+                <h1 className="text-sm sm:text-[15px] font-semibold text-[#F0F4F8] truncate">
                   {activeBundle?.channel.title ?? t.appName}
                 </h1>
               </div>
             </div>
 
             {/* Zone 2: Clean Segmented Tabs (Desktop) */}
-            <nav className="hidden md:flex items-center gap-1 rounded-lg bg-[#0e1621]/75 p-1 border border-white/[0.06]">
+            <nav className="hidden md:flex items-center gap-1 rounded-lg bg-[#090C10]/85 p-1 border border-white/[0.08]">
               {(
                 [
                   { id: 'overview', label: t.tabOverview },
@@ -935,8 +913,8 @@ export function App() {
                     onClick={() => setActiveTab(tab.id)}
                     className={`rounded-md px-3 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                       active
-                        ? 'bg-[#3390ec] text-white'
-                        : 'text-[#7f91a4] hover:text-[#f5f7fa]'
+                        ? 'bg-[#2AABEE] text-[#090C10] font-semibold'
+                        : 'text-[#8B9BB0] hover:text-[#F0F4F8]'
                     }`}
                   >
                     {tab.label}
@@ -950,9 +928,9 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setSnapshotModalOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#17212b] px-3 py-1.5 text-xs font-medium text-[#f5f7fa] hover:bg-[#1e2c3a] whitespace-nowrap shrink-0 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-[#11161D]/90 px-3 py-1.5 text-xs font-medium text-[#F0F4F8] hover:bg-[#1A222D] whitespace-nowrap shrink-0 cursor-pointer"
               >
-                <Camera className="w-3.5 h-3.5 text-[#5eb5f7]" />
+                <Camera className="w-3.5 h-3.5 text-[#5EC2F6]" />
                 <span className="hidden sm:inline">{t.snapshotsBtn}</span>
               </button>
 
@@ -961,7 +939,7 @@ export function App() {
                   type="button"
                   disabled={syncingChannel}
                   onClick={() => loadLiveChannelBundle(activeBundle.channel.id)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#3390ec] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#2a80d6] disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#2AABEE] px-3 py-1.5 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${syncingChannel ? 'animate-spin' : ''}`} />
                   <span>
@@ -975,7 +953,7 @@ export function App() {
           </div>
 
           {/* Mobile Tab Strip */}
-          <div className="flex md:hidden border-t border-white/[0.06] px-3 py-1.5 gap-1 justify-between">
+          <div className="flex md:hidden border-t border-white/[0.08] px-3 py-1.5 gap-1 justify-between">
             {(
               [
                 { id: 'overview', label: lang === 'fa' ? 'نمای کلی' : 'Overview' },
@@ -990,7 +968,7 @@ export function App() {
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium whitespace-nowrap cursor-pointer ${
-                    active ? 'bg-[#3390ec] text-white' : 'text-[#7f91a4]'
+                    active ? 'bg-[#2AABEE] text-[#090C10] font-semibold' : 'text-[#8B9BB0]'
                   }`}
                 >
                   {tab.label}

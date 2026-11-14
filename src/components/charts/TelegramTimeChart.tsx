@@ -108,7 +108,7 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = ({
 
   if (totalPoints === 0) {
     return (
-      <div className="tg-panel rounded-2xl p-5">
+      <div className="tg-panel rounded-xl p-5">
         <div className="text-[13px] font-semibold text-[#5eb5f7]">{graph.title}</div>
         <div className="mt-3 text-xs text-[#7f91a4]">
           {graph.error || 'No chart data available for this period.'}
@@ -123,7 +123,7 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = ({
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => Math.round(minVal + t * (maxVal - minVal)));
 
   return (
-    <section className="tg-panel rounded-2xl p-4 sm:p-5" aria-label={graph.title}>
+    <section className="tg-panel rounded-xl p-4 sm:p-5" aria-label={graph.title}>
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
         <div>
           <h3 className="text-[13px] font-semibold text-[#5eb5f7]">{graph.title}</h3>

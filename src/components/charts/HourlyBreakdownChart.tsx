@@ -12,7 +12,7 @@ export const HourlyBreakdownChart: React.FC<HourlyBreakdownChartProps> = ({ grap
 
   if (!primary || primary.values.length === 0) {
     return (
-      <div className="tg-panel rounded-2xl p-5">
+      <div className="tg-panel rounded-xl p-5">
         <h3 className="text-[13px] font-semibold text-[#5eb5f7]">{title}</h3>
         <p className="text-xs text-[#7f91a4] mt-3">No hourly activity data available yet.</p>
       </div>
@@ -23,7 +23,7 @@ export const HourlyBreakdownChart: React.FC<HourlyBreakdownChartProps> = ({ grap
   const peakIdx = primary.values.indexOf(Math.max(...primary.values));
 
   return (
-    <section className="tg-panel rounded-2xl p-5" aria-label={title}>
+    <section className="tg-panel rounded-xl p-5" aria-label={title}>
       <div className="flex items-baseline justify-between gap-3 mb-4">
         <h3 className="text-[13px] font-semibold text-[#5eb5f7]">{title}</h3>
         <span dir="ltr" className="text-xs text-[#7f91a4] font-mono-num">

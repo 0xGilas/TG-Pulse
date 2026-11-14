@@ -123,11 +123,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Unified Telegram-Native Overview Panel (Single surface, hairline dividers, zero card-in-card bubbles) */}
-      <section className="tg-panel rounded-2xl overflow-hidden" aria-label={t.overviewSectionTitle}>
+      {/* Unified TeleScope Overview Panel (Single surface, hairline dividers, zero card-in-card bubbles) */}
+      <section className="tg-panel rounded-xl overflow-hidden" aria-label={t.overviewSectionTitle}>
         <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-4">
-          <h2 className="text-[13px] font-semibold text-[#5eb5f7]">{t.overviewSectionTitle}</h2>
-          <div dir="ltr" className="text-[11px] font-mono-num text-[#7f91a4]">
+          <h2 className="text-[13px] font-semibold text-[#5EC2F6]">{t.overviewSectionTitle}</h2>
+          <div dir="ltr" className="text-[11px] font-mono-num text-[#8B9BB0]">
             {new Date(overview.periodFrom).toLocaleDateString('en-US', {
               month: 'short',
               day: 'numeric',
@@ -165,7 +165,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
 
         {/* Benchmarks & Public/Private Split Sub-Bar */}
-        <div className="border-t border-white/[0.06] bg-[#111923]/45 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.06]">
+        <div className="border-t border-white/[0.07] bg-[#0B0F14]/65 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.06]">
           <div className="px-5 py-3 flex items-baseline justify-between gap-2">
             <span className="text-xs text-[#7f91a4]">{t.benchMedianViews}</span>
             <span dir="ltr" className="text-xs font-semibold font-mono-num text-[#f5f7fa]">
@@ -224,18 +224,18 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       {/* Exact Per-Date Views & Shares Attribution Ledger */}
       {attribution && (
         <section
-          className="tg-panel rounded-2xl overflow-hidden"
+          className="tg-panel rounded-xl overflow-hidden"
           aria-label={t.attributionTitle}
         >
           <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-0.5">
-              <h3 className="text-[13px] font-semibold text-[#5eb5f7]">
+              <h3 className="text-[13px] font-semibold text-[#5EC2F6]">
                 {t.attributionTitle}{' '}
-                <span dir="ltr" className="inline-block font-mono-num text-[#f5a623] ms-1">
+                <span dir="ltr" className="inline-block font-mono-num text-[#F59E0B] ms-1">
                   {attribution.dateKey}
                 </span>
               </h3>
-              <p className="text-xs text-[#7f91a4] max-w-3xl leading-relaxed">
+              <p className="text-xs text-[#8B9BB0] max-w-3xl leading-relaxed">
                 {t.attributionHowBody}
               </p>
             </div>
@@ -245,7 +245,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 type="button"
                 disabled={scanningAttribution}
                 onClick={onScanAttribution}
-                className="inline-flex items-center gap-2 rounded-lg bg-[#3390ec] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#2a80d6] disabled:opacity-60 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#2AABEE] px-3.5 py-2 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 transition-colors cursor-pointer whitespace-nowrap shrink-0"
               >
                 {scanningAttribution ? (
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -262,7 +262,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
 
           {/* 3-Column Date Reconciliation Strip (Hairline-divided, zero nested cards) */}
-          <div className="border-y border-white/[0.06] bg-[#111923]/40 grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.06]">
+          <div className="border-y border-white/[0.07] bg-[#0B0F14]/60 grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.06]">
             <div className="px-5 py-3">
               <div className="text-[11px] text-[#7f91a4]">{t.channelGraphLabel}</div>
               <div dir="ltr" className="mt-1 flex items-baseline gap-3 font-mono-num">

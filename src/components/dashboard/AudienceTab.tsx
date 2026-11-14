@@ -56,7 +56,7 @@ export const AudienceTab: React.FC<AudienceTabProps> = ({ lang, bundle }) => {
       )}
 
       {/* 7x6 Weekday x 4h Posting Performance Matrix */}
-      <section className="tg-panel rounded-2xl p-5 space-y-4" aria-label={t.heatmapTitle}>
+      <section className="tg-panel rounded-xl p-5 space-y-4" aria-label={t.heatmapTitle}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-[13px] font-semibold text-[#5eb5f7]">{t.heatmapTitle}</h3>
@@ -155,7 +155,7 @@ export const AudienceTab: React.FC<AudienceTabProps> = ({ lang, bundle }) => {
         )}
 
         {/* Languages Distribution */}
-        <section className="tg-panel rounded-2xl p-5 space-y-4">
+        <section className="tg-panel rounded-xl p-5 space-y-4">
           <h3 className="text-[13px] font-semibold text-[#5eb5f7]">
             {lang === 'fa' ? 'زبان مخاطبان کانال' : 'Subscriber Languages'}
           </h3>
@@ -183,7 +183,7 @@ export const AudienceTab: React.FC<AudienceTabProps> = ({ lang, bundle }) => {
       </div>
 
       {/* Content Format Efficiency Table */}
-      <section className="tg-panel rounded-2xl overflow-hidden">
+      <section className="tg-panel rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-white/[0.06]">
           <h3 className="text-[13px] font-semibold text-[#5eb5f7]">{t.formatInsightsTitle}</h3>
           <p className="text-xs text-[#7f91a4] mt-0.5">{t.formatInsightsSub}</p>

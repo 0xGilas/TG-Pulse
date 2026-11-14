@@ -2,21 +2,21 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* Telegram Desktop / macOS dark palette */
-  --tg-bg: #0e1621;
-  --tg-surface: #17212b;
-  --tg-surface-inset: #111923;
-  --tg-surface-hover: #1e2c3a;
-  --tg-border: rgba(255, 255, 255, 0.06);
-  --tg-border-strong: rgba(255, 255, 255, 0.11);
-  --tg-text: #f5f7fa;
-  --tg-text-secondary: #7f91a4;
-  --tg-text-muted: #5d6f82;
-  --tg-accent: #3390ec;
-  --tg-accent-soft: #5eb5f7;
-  --tg-green: #4dcd5e;
-  --tg-amber: #f5a623;
-  --tg-rose: #e55353;
+  /* TeleScope Obsidian Telemetry & Telegram Signal Palette */
+  --tg-bg: #090c10;
+  --tg-surface: #11161d;
+  --tg-surface-inset: #0b0f14;
+  --tg-surface-elevated: #171d26;
+  --tg-border: rgba(255, 255, 255, 0.08);
+  --tg-border-strong: rgba(255, 255, 255, 0.14);
+  --tg-text: #f0f4f8;
+  --tg-text-secondary: #8b9bb0;
+  --tg-text-muted: #586778;
+  --tg-accent: #2aabee;
+  --tg-accent-soft: #5ec2f6;
+  --tg-green: #22c55e;
+  --tg-amber: #f59e0b;
+  --tg-rose: #ef4444;
 }
 
 @layer base {
@@ -30,35 +30,59 @@
   html[dir='rtl'] body {
     font-family: 'Vazirmatn', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   }
+
+  :where(button, a, input, select, textarea):focus-visible {
+    outline: 2px solid var(--tg-accent);
+    outline-offset: 2px;
+  }
 }
 
-/* Flat native-style surface for primary data panels */
+/* Calibrated obsidian telemetry dot-grid canvas (gives frosted glass real optical depth) */
+.telescope-canvas {
+  background-color: var(--tg-bg);
+  background-image:
+    linear-gradient(180deg, rgba(42, 171, 238, 0.055) 0%, rgba(42, 171, 238, 0) 320px),
+    radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 100% 100%, 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+/* Tactile frosted panel surface (uses Tailwind backdrop utilities so Vite/LightningCSS preserves unprefixed + webkit rules) */
 .tg-panel {
-  background-color: var(--tg-surface);
+  @apply backdrop-blur-md backdrop-saturate-150;
+  background-color: rgba(17, 22, 29, 0.86);
   border: 1px solid var(--tg-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
 }
 
-/* Liquid Glass reserved strictly for floating chrome, sheets, tooltips, and drawers */
+/* Sticky frosted obsidian chrome header (high-contrast, never washed out or transparent) */
 .tg-chrome-glass {
-  background: rgba(23, 33, 43, 0.78);
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  border-color: var(--tg-border);
+  @apply backdrop-blur-xl backdrop-saturate-150;
+  background-color: rgba(13, 18, 24, 0.88);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 12px 32px -18px rgba(0, 0, 0, 0.85);
 }
 
+/* Liquid Glass reserved for floating modals, tooltips, and the inspector drawer */
 .tg-sheet-glass {
-  background: rgba(23, 33, 43, 0.9);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  @apply backdrop-blur-2xl backdrop-saturate-150;
+  background-color: rgba(16, 21, 28, 0.92);
   border: 1px solid var(--tg-border-strong);
-  box-shadow: 0 24px 48px -18px rgba(0, 0, 0, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 24px 56px -18px rgba(0, 0, 0, 0.82);
 }
 
-.reduce-glass .tg-chrome-glass,
-.reduce-glass .tg-sheet-glass {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  background: #17212b;
+@media (prefers-reduced-transparency: reduce) {
+  .tg-panel,
+  .tg-chrome-glass,
+  .tg-sheet-glass {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-color: #11161d;
+  }
 }
 
 .font-mono-num {
@@ -81,10 +105,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(127, 145, 164, 0.24);
+  background: rgba(139, 155, 176, 0.24);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(127, 145, 164, 0.42);
+  background: rgba(139, 155, 176, 0.42);
 }

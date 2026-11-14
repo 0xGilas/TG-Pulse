@@ -5,7 +5,11 @@ interface BrandLogoProps {
   className?: string;
 }
 
-export const BrandLogo: React.FC<BrandLogoProps> = ({ size = 34, className = '' }) => {
+/**
+ * TeleScope Optical Reticle + Attribution Signal Emblem.
+ * Geometric crosshair frame with Telegram cyan sweep and amber attribution focal point.
+ */
+export const BrandLogo: React.FC<BrandLogoProps> = ({ size = 32, className = '' }) => {
   return (
     <svg
       width={size}
@@ -16,51 +20,46 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ size = 34, className = '' 
       className={`shrink-0 ${className}`}
       aria-hidden="true"
     >
-      <defs>
-        <linearGradient id="ts-bg-grad" x1="4" y1="2" x2="36" y2="38" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#38BDF8" />
-          <stop offset="55%" stopColor="#2AABEE" />
-          <stop offset="100%" stopColor="#1D6FE8" />
-        </linearGradient>
-        <linearGradient id="ts-lens-grad" x1="12" y1="10" x2="28" y2="30" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.98" />
-          <stop offset="100%" stopColor="#BAE6FD" stopOpacity="0.88" />
-        </linearGradient>
-      </defs>
-
-      {/* Rounded Liquid Glass Squircle */}
-      <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#ts-bg-grad)" />
+      {/* Precision Obsidian Housing */}
+      <rect x="2" y="2" width="36" height="36" rx="10" fill="#0D1218" />
       <rect
         x="2.5"
         y="2.5"
         width="35"
         height="35"
-        rx="10.5"
-        stroke="white"
-        strokeOpacity="0.28"
-        strokeWidth="1"
+        rx="9.5"
+        stroke="rgba(42, 171, 238, 0.42)"
+        strokeWidth="1.2"
+      />
+
+      {/* Reticle Calibration Ticks */}
+      <path
+        d="M20 5.5V8.5M20 31.5V34.5M5.5 20H8.5M31.5 20H34.5"
+        stroke="rgba(240, 244, 248, 0.28)"
+        strokeWidth="1.3"
+        strokeLinecap="round"
       />
 
       {/* Optical Aperture Ring */}
       <circle
         cx="20"
         cy="20"
-        r="10.5"
-        stroke="url(#ts-lens-grad)"
-        strokeWidth="1.75"
-        strokeDasharray="48 18"
+        r="9.5"
+        stroke="#2AABEE"
+        strokeWidth="1.7"
+        strokeDasharray="44 16"
         strokeLinecap="round"
       />
 
-      {/* Signal Vector / Prism Needle */}
+      {/* Forward Attribution Signal Vector */}
       <path
-        d="M14.5 23.5L18.2 17.8L21.3 20.6L25.8 15"
-        stroke="#FFFFFF"
-        strokeWidth="2.2"
+        d="M13.5 23.5L18 18.2L21.5 21L26.5 14.5"
+        stroke="#F0F4F8"
+        strokeWidth="2.1"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <circle cx="25.8" cy="15" r="2.1" fill="#FDE047" />
+      <circle cx="26.5" cy="14.5" r="2.3" fill="#F59E0B" />
     </svg>
   );
 };
