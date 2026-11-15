@@ -52,7 +52,7 @@ export const AudienceTab: React.FC<AudienceTabProps> = React.memo(({ lang, bundl
   return (
     <div className="space-y-4">
       {overview.topHoursGraph && (
-        <HourlyBreakdownChart graph={overview.topHoursGraph} title={t.topHoursTitle} />
+        <HourlyBreakdownChart graph={overview.topHoursGraph} title={t.topHoursTitle} lang={lang} />
       )}
 
       {/* 7x6 Weekday x 4h Posting Performance Matrix */}
