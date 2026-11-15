@@ -21,6 +21,96 @@ import {
 const DATES_10D = Array.from({ length: 10 }, (_, i) => Date.UTC(2026, 9, 15 + i));
 const HOURS_24 = Array.from({ length: 24 }, (_, h) => Date.UTC(2026, 9, 24, h, 0));
 
+function svgDataUri(svg: string): string {
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg.trim())}`;
+}
+
+const CHANNEL_1_AVATAR = svgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B4F7A"/>
+      <stop offset="100%" stop-color="#2AABEE"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="60" fill="url(#g1)"/>
+  <circle cx="60" cy="60" r="44" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="2"/>
+  <path d="M30 72 L48 48 L64 62 L90 36" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="90" cy="36" r="6" fill="#45D168"/>
+</svg>
+`);
+
+const CHANNEL_2_AVATAR = svgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#133D29"/>
+      <stop offset="100%" stop-color="#45D168"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="60" fill="url(#g2)"/>
+  <rect x="34" y="48" width="8" height="24" rx="4" fill="#fff"/>
+  <rect x="48" y="34" width="8" height="52" rx="4" fill="#fff"/>
+  <rect x="62" y="42" width="8" height="36" rx="4" fill="#fff"/>
+  <rect x="76" y="28" width="8" height="64" rx="4" fill="#F5A623"/>
+</svg>
+`);
+
+const SAMPLE_PHOTO_GLASS = svgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#09131E"/>
+      <stop offset="50%" stop-color="#112A42"/>
+      <stop offset="100%" stop-color="#0D1824"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <circle cx="180" cy="110" r="110" fill="#2AABEE" fill-opacity="0.22"/>
+  <circle cx="480" cy="250" r="120" fill="#45D168" fill-opacity="0.16"/>
+  <rect x="72" y="64" width="496" height="232" rx="22" fill="rgba(17,22,29,0.72)" stroke="rgba(255,255,255,0.18)" stroke-width="2"/>
+  <rect x="104" y="102" width="170" height="16" rx="8" fill="#5EC2F6"/>
+  <rect x="104" y="136" width="290" height="10" rx="5" fill="rgba(240,244,248,0.45)"/>
+  <path d="M104 245 L190 212 L275 228 L360 172 L450 192 L536 140" fill="none" stroke="#45D168" stroke-width="4" stroke-linecap="round"/>
+  <path d="M104 258 L190 250 L275 244 L360 226 L450 232 L536 206" fill="none" stroke="#F5A623" stroke-width="4" stroke-linecap="round"/>
+</svg>
+`);
+
+const SAMPLE_PHOTO_STATS = svgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#0B1118"/>
+  <rect x="52" y="48" width="536" height="264" rx="18" fill="#131B24" stroke="rgba(94,194,246,0.28)" stroke-width="2"/>
+  <rect x="90" y="92" width="140" height="58" rx="10" fill="#182534"/>
+  <rect x="250" y="92" width="140" height="58" rx="10" fill="#182534"/>
+  <rect x="410" y="92" width="140" height="58" rx="10" fill="#182534"/>
+  <polyline points="90,260 165,244 240,222 315,235 390,180 465,196 550,148" fill="none" stroke="#2AABEE" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+`);
+
+const SAMPLE_VIDEO_POSTER = svgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#0A0F15"/>
+  <rect x="40" y="36" width="560" height="288" rx="16" fill="#101822" stroke="rgba(255,255,255,0.12)"/>
+  <path d="M80 248 Q180 120 290 198 T560 112" fill="none" stroke="#5EC2F6" stroke-width="5"/>
+  <circle cx="320" cy="180" r="34" fill="rgba(42,171,238,0.28)" stroke="#2AABEE" stroke-width="2"/>
+</svg>
+`);
+
+const SAMPLE_AUDIO_COVER = svgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <defs>
+    <linearGradient id="ac" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#D91E2A"/>
+      <stop offset="100%" stop-color="#7B0B14"/>
+    </linearGradient>
+  </defs>
+  <rect width="240" height="240" rx="20" fill="url(#ac)"/>
+  <circle cx="120" cy="120" r="68" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="4"/>
+  <circle cx="120" cy="120" r="22" fill="#0B0F14"/>
+  <path d="M52 178 L188 62" stroke="rgba(255,255,255,0.25)" stroke-width="6" stroke-linecap="round"/>
+</svg>
+`);
+
 const SAMPLE_CHANNELS: ChannelSummary[] = [
   {
     id: 1004821930,
@@ -33,6 +123,7 @@ const SAMPLE_CHANNELS: ChannelSummary[] = [
     statsDc: 4,
     lastSyncedAt: Date.UTC(2026, 9, 24, 18, 0),
     avatarColor: '#2aabee',
+    avatarUrl: CHANNEL_1_AVATAR,
   },
   {
     id: 1007392014,
@@ -45,6 +136,7 @@ const SAMPLE_CHANNELS: ChannelSummary[] = [
     statsDc: 2,
     lastSyncedAt: Date.UTC(2026, 9, 24, 16, 45),
     avatarColor: '#45d168',
+    avatarUrl: CHANNEL_2_AVATAR,
   },
 ];
 
@@ -164,6 +256,11 @@ const CHANNEL_1_MESSAGES: RawChannelMessage[] = [
     replies: 14,
     groupedId: null,
     mediaKind: 'text',
+    mediaMeta: {
+      title: 'Worker-Isolated MTProto Benchmarks (WASM + WebCrypto)',
+      webPageSite: 'vektortech.dev',
+      webPageUrl: 'https://vektortech.dev/notes/mtproto-worker-benchmarks',
+    },
     reactions: [
       { emoji: '🔥', count: 42 },
       { emoji: '👍', count: 29 },
@@ -179,6 +276,11 @@ const CHANNEL_1_MESSAGES: RawChannelMessage[] = [
     replies: 8,
     groupedId: null,
     mediaKind: 'photo',
+    mediaMeta: {
+      width: 1280,
+      height: 720,
+      thumbUrl: SAMPLE_PHOTO_GLASS,
+    },
     reactions: [
       { emoji: '❤️', count: 38 },
       { emoji: '🔥', count: 21 },
@@ -206,6 +308,17 @@ const CHANNEL_1_MESSAGES: RawChannelMessage[] = [
     replies: 19,
     groupedId: null,
     mediaKind: 'poll',
+    mediaMeta: {
+      pollQuestion: 'Which transport mode do you rely on most for channel administration?',
+      pollVoters: 412,
+      pollIsQuiz: false,
+      pollIsClosed: false,
+      pollOptions: [
+        { text: 'Direct WebSocket (DC1–DC5)', voters: 238 },
+        { text: 'Local SOCKS5 Bridge', voters: 112 },
+        { text: 'Cloudflare Worker Relay', voters: 62 },
+      ],
+    },
     reactions: [{ emoji: '🤔', count: 16 }],
     permalink: 'https://t.me/vektortech/532',
   },
@@ -218,6 +331,11 @@ const CHANNEL_1_MESSAGES: RawChannelMessage[] = [
     replies: 12,
     groupedId: null,
     mediaKind: 'photo',
+    mediaMeta: {
+      width: 1280,
+      height: 720,
+      thumbUrl: SAMPLE_PHOTO_STATS,
+    },
     reactions: [
       { emoji: '🔥', count: 36 },
       { emoji: '👏', count: 14 },
@@ -234,6 +352,11 @@ const CHANNEL_1_MESSAGES: RawChannelMessage[] = [
     replies: 31,
     groupedId: null,
     mediaKind: 'document',
+    mediaMeta: {
+      fileName: 'Zero-Backend-Threat-Model-v2.pdf',
+      mimeType: 'application/pdf',
+      fileSizeBytes: 2_840_000,
+    },
     reactions: [
       { emoji: '🔥', count: 112 },
       { emoji: '❤️', count: 64 },
@@ -250,6 +373,11 @@ const CHANNEL_1_MESSAGES: RawChannelMessage[] = [
     replies: 22,
     groupedId: '771029384',
     mediaKind: 'photo',
+    mediaMeta: {
+      width: 1280,
+      height: 720,
+      thumbUrl: SAMPLE_PHOTO_GLASS,
+    },
     reactions: [
       { emoji: '❤️', count: 78 },
       { emoji: '🔥', count: 59 },
@@ -265,6 +393,11 @@ const CHANNEL_1_MESSAGES: RawChannelMessage[] = [
     replies: 0,
     groupedId: '771029384',
     mediaKind: 'document',
+    mediaMeta: {
+      fileName: 'Relay-Topology-Schema.svg',
+      mimeType: 'image/svg+xml',
+      fileSizeBytes: 184_320,
+    },
     reactions: [],
     permalink: 'https://t.me/vektortech/499',
   },
@@ -277,6 +410,11 @@ const CHANNEL_1_MESSAGES: RawChannelMessage[] = [
     replies: 0,
     groupedId: '771029384',
     mediaKind: 'photo',
+    mediaMeta: {
+      width: 1280,
+      height: 720,
+      thumbUrl: SAMPLE_PHOTO_STATS,
+    },
     reactions: [],
     permalink: 'https://t.me/vektortech/500',
   },
@@ -289,6 +427,15 @@ const CHANNEL_1_MESSAGES: RawChannelMessage[] = [
     replies: 15,
     groupedId: null,
     mediaKind: 'video',
+    mediaMeta: {
+      fileName: 'svg-timeline-scrubbing-120hz.mp4',
+      mimeType: 'video/mp4',
+      durationSec: 47,
+      width: 1920,
+      height: 1080,
+      fileSizeBytes: 11_450_000,
+      thumbUrl: SAMPLE_VIDEO_POSTER,
+    },
     reactions: [
       { emoji: '🔥', count: 52 },
       { emoji: '👏', count: 19 },
@@ -416,6 +563,11 @@ const CHANNEL_2_MESSAGES: RawChannelMessage[] = [
     replies: 6,
     groupedId: null,
     mediaKind: 'photo',
+    mediaMeta: {
+      width: 1280,
+      height: 720,
+      thumbUrl: SAMPLE_PHOTO_GLASS,
+    },
     reactions: [
       { emoji: '❤️', count: 24 },
       { emoji: '🔥', count: 14 },
@@ -425,12 +577,21 @@ const CHANNEL_2_MESSAGES: RawChannelMessage[] = [
   {
     id: 215,
     date: Date.UTC(2026, 9, 22, 18, 15),
-    text: 'اتود صوتی مینیمال برای تیتراژ — نسخه مسترشده با فضای آنالوگ',
+    text: '',
     views: 430,
     forwards: 4,
     replies: 3,
     groupedId: null,
     mediaKind: 'audio',
+    mediaMeta: {
+      title: 'Analog Midnight (Mastered Cut)',
+      performer: 'Studio Signal',
+      durationSec: 214,
+      fileName: 'Analog_Midnight_Mastered.mp3',
+      mimeType: 'audio/mpeg',
+      fileSizeBytes: 8_420_000,
+      thumbUrl: SAMPLE_AUDIO_COVER,
+    },
     reactions: [{ emoji: '🔥', count: 18 }],
     permalink: 'https://t.me/studiosignal/215',
   },
@@ -455,6 +616,11 @@ const CHANNEL_2_MESSAGES: RawChannelMessage[] = [
     replies: 11,
     groupedId: '662109445',
     mediaKind: 'photo',
+    mediaMeta: {
+      width: 1280,
+      height: 720,
+      thumbUrl: SAMPLE_PHOTO_STATS,
+    },
     reactions: [
       { emoji: '🔥', count: 41 },
       { emoji: '❤️', count: 33 },
@@ -470,6 +636,11 @@ const CHANNEL_2_MESSAGES: RawChannelMessage[] = [
     replies: 0,
     groupedId: '662109445',
     mediaKind: 'document',
+    mediaMeta: {
+      fileName: 'Mastering-Presets-Guide.pdf',
+      mimeType: 'application/pdf',
+      fileSizeBytes: 4_120_000,
+    },
     reactions: [],
     permalink: 'https://t.me/studiosignal/195',
   },
@@ -482,6 +653,15 @@ const CHANNEL_2_MESSAGES: RawChannelMessage[] = [
     replies: 7,
     groupedId: null,
     mediaKind: 'video',
+    mediaMeta: {
+      fileName: 'modular-synth-session.mp4',
+      mimeType: 'video/mp4',
+      durationSec: 126,
+      width: 1920,
+      height: 1080,
+      fileSizeBytes: 18_700_000,
+      thumbUrl: SAMPLE_VIDEO_POSTER,
+    },
     reactions: [{ emoji: '👏', count: 29 }],
     permalink: 'https://t.me/studiosignal/182',
   },

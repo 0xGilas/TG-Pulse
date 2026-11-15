@@ -3,14 +3,19 @@ import assert from 'node:assert/strict';
 import {
   attributeDateFromMessageStats,
   buildSnapshotFromPosts,
+  computeAxisTicks,
   computeChannelBenchmarks,
   computeEvergreenRatio,
   computeSnapshotDeltas,
   computeWeekdayHourMatrix,
   exportPostsToCsv,
   extractDailyActivityFromGraph,
+  formatFileSize,
+  formatMediaDuration,
+  getPostDisplayTitle,
   groupAlbumPosts,
   parseTelegramStatsGraph,
+  shouldUseDualAxis,
 } from './analyticsMath';
 import type { ParsedStatsGraph, PostDetailedStats, RawChannelMessage } from '../types/analytics';
 
@@ -186,3 +191,54 @@ test('computeSnapshotDeltas accurately calculates deltas from baseline snapshot'
   assert.equal(deltas[0].deltaShares, 3);
   assert.equal(deltas[0].deltaReactions, 2);
 });
+
+test('dual-axis detection and integer tick computation prevent crushed Shares lines', () => {
+  const ticksSmall = computeAxisTicks(0, 4);
+  assert.deepEqual(ticksSmall, [0, 1, 2, 3, 4]);
+
+  const ticksZeroToOne = computeAxisTicks(0, 1);
+  assert.deepEqual(ticksZeroToOne, [0, 1]);
+
+  const ticksLarge = computeAxisTicks(0, 785);
+  assert.equal(ticksLarge.length, 5);
+  assert.equal(ticksLarge[0], 0);
+  assert.equal(ticksLarge[4], 785);
+
+  const viewsAndShares = [
+    { key: 'y0', label: 'Views', color: '#3390ec', values: [120, 785, 650] },
+    { key: 'y1', label: 'Shares', color: '#f5a623', values: [0, 4, 3] },
+  ];
+  assert.equal(shouldUseDualAxis(viewsAndShares, 'line'), true);
+  assert.equal(shouldUseDualAxis([viewsAndShares[0]], 'line'), false);
+  assert.equal(shouldUseDualAxis(viewsAndShares, 'bar'), false);
+});
+
+test('media formatters and getPostDisplayTitle handle captionless audio and poll posts cleanly', () => {
+  assert.equal(formatMediaDuration(205), '3:25');
+  assert.equal(formatMediaDuration(3665), '1:01:05');
+  assert.equal(formatFileSize(1536), '1.5 KB');
+  assert.equal(formatFileSize(4 * 1024 * 1024), '4.0 MB');
+
+  const posts = groupAlbumPosts([
+    {
+      id: 1406,
+      date: Date.UTC(2026, 9, 30),
+      text: '',
+      views: 48,
+      forwards: 1,
+      replies: 0,
+      groupedId: null,
+      mediaKind: 'audio',
+      mediaMeta: {
+        title: 'Metamorphosis',
+        performer: '0xAudio',
+        durationSec: 184,
+      },
+      reactions: [],
+    },
+  ]);
+
+  assert.equal(getPostDisplayTitle(posts[0], 'en'), '0xAudio — Metamorphosis');
+  assert.equal(getPostDisplayTitle(posts[0], 'fa'), '0xAudio — Metamorphosis');
+});
+

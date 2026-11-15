@@ -1,6 +1,14 @@
 /// <reference lib="webworker" />
 
-import { MemoryStorage, TelegramClient, WebSocketTransport, tl } from '@mtcute/web';
+import {
+  MemoryStorage,
+  TelegramClient,
+  WebSocketTransport,
+  tl,
+  type ChatPhoto,
+  type Message,
+  type Thumbnail,
+} from '@mtcute/web';
 import type { WebSocketConstructor } from '@fuman/net';
 import type {
   ApiCredentials,
@@ -10,6 +18,9 @@ import type {
   NetworkConfig,
   ParsedStatsGraph,
   PostDetailedStats,
+  PostMediaMeta,
+  PostMediaPreview,
+  PostMediaPreviewItem,
   PublicForwardRecord,
   RawChannelMessage,
   ReactionCount,
@@ -68,6 +79,13 @@ export type WorkerCommand =
       statsDc?: number;
       maxPosts?: number;
     }
+  | {
+      id: string;
+      type: 'fetch_post_media_preview';
+      channelId: number;
+      postKey: string;
+      messageIds: number[];
+    }
   | { id: string; type: 'abort_attribution' };
 
 export type WorkerEvent =
@@ -79,6 +97,7 @@ export type WorkerEvent =
   | { type: 'authorized'; user: TelegramUserSummary }
   | { type: 'scan_progress'; channelId: number; scannedCount: number }
   | { type: 'attribution_progress'; channelId: number; completed: number; total: number }
+  | { type: 'channel_avatars_updated'; avatars: Record<number, string> }
   | { type: 'live_forwards_update'; channelId: number; msgId: number; forwards: number };
 
 const AVATAR_PALETTE = ['#3390ec', '#4dcd5e', '#f5a623', '#9b6dff', '#e55353', '#27a6d1'];
@@ -261,8 +280,202 @@ let qrAbortController: AbortController | null = null;
 let pendingQrPasswordResolve: ((pwd: string) => void) | null = null;
 let attributionAborted = false;
 
+const channelAvatarCache = new Map<number, string>();
+const mediaPreviewCache = new Map<string, PostMediaPreview>();
+const MAX_MEDIA_PREVIEW_CACHE = 100;
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function uint8ToDataUrl(bytes: Uint8Array, mime = 'image/jpeg'): string {
+  let binary = '';
+  const chunkSize = 0x2000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...slice);
+  }
+  return `data:${mime};base64,${btoa(binary)}`;
+}
+
+function getInlineStrippedThumbUrl(thumbnails?: ReadonlyArray<Thumbnail>): string | undefined {
+  if (!thumbnails || thumbnails.length === 0) return undefined;
+  const stripped = thumbnails.find((th) => th.raw._ === 'photoStrippedSize');
+  if (stripped && stripped.location instanceof Uint8Array) {
+    return uint8ToDataUrl(stripped.location);
+  }
+  return undefined;
+}
+
+function pickBestDownloadableThumb(thumbnails?: ReadonlyArray<Thumbnail>): Thumbnail | null {
+  if (!thumbnails || thumbnails.length === 0) return null;
+  const preferredTypes = ['m', 'x', 'c', 'b', 's', 'a'];
+  for (const t of preferredTypes) {
+    const found = thumbnails.find((th) => th.type === t && th.raw._ !== 'photoPathSize');
+    if (found) return found;
+  }
+  return (
+    thumbnails.find(
+      (th) => th.raw._ !== 'photoPathSize' && th.raw._ !== 'videoSizeEmojiMarkup' && th.raw._ !== 'videoSizeStickerMarkup',
+    ) ?? null
+  );
+}
+
+function extractMessageMediaMeta(msg: Message): PostMediaMeta | undefined {
+  const media = msg.media;
+  if (!media) return undefined;
+
+  switch (media.type) {
+    case 'photo':
+      return {
+        width: media.width,
+        height: media.height,
+        thumbUrl: getInlineStrippedThumbUrl(media.thumbnails),
+      };
+    case 'audio':
+      return {
+        title: media.title ?? undefined,
+        performer: media.performer ?? undefined,
+        durationSec: media.duration,
+        fileName: media.fileName ?? undefined,
+        mimeType: media.mimeType,
+        fileSizeBytes: media.fileSize,
+        thumbUrl: getInlineStrippedThumbUrl(media.thumbnails),
+      };
+    case 'voice':
+      return {
+        isVoice: true,
+        durationSec: media.duration,
+        fileName: media.fileName ?? undefined,
+        mimeType: media.mimeType,
+        fileSizeBytes: media.fileSize,
+      };
+    case 'video':
+      return {
+        width: media.width,
+        height: media.height,
+        durationSec: media.duration,
+        fileName: media.fileName ?? undefined,
+        mimeType: media.mimeType,
+        fileSizeBytes: media.fileSize,
+        isAnimation: media.isAnimation,
+        isRound: media.isRound,
+        thumbUrl:
+          getInlineStrippedThumbUrl(media.videoCover?.thumbnails) ??
+          getInlineStrippedThumbUrl(media.thumbnails),
+      };
+    case 'poll':
+      return {
+        pollQuestion: media.question,
+        pollVoters: media.voters,
+        pollIsQuiz: media.isQuiz,
+        pollIsClosed: media.isClosed,
+        pollOptions: media.answers.map((ans) => ({
+          text: ans.text,
+          voters: ans.voters,
+          chosen: ans.chosen,
+        })),
+      };
+    case 'webpage':
+      return {
+        title: media.preview.title ?? undefined,
+        webPageSite: media.preview.siteName ?? undefined,
+        webPageUrl: media.preview.displayUrl || media.preview.url,
+        thumbUrl: getInlineStrippedThumbUrl(media.preview.photo?.thumbnails),
+      };
+    case 'document':
+      return {
+        fileName: media.fileName ?? undefined,
+        mimeType: media.mimeType,
+        fileSizeBytes: media.fileSize,
+        thumbUrl: getInlineStrippedThumbUrl(media.thumbnails),
+      };
+    default:
+      return undefined;
+  }
+}
+
+async function downloadChannelSmallAvatar(
+  client: TelegramClient,
+  channelId: number,
+  photo: ChatPhoto | null,
+): Promise<string | undefined> {
+  const cached = channelAvatarCache.get(channelId);
+  if (cached) return cached;
+  if (!photo) return undefined;
+  try {
+    const bytes = await client.downloadAsBuffer(photo.small);
+    const dataUrl = uint8ToDataUrl(bytes);
+    channelAvatarCache.set(channelId, dataUrl);
+    return dataUrl;
+  } catch {
+    if (photo.thumb) {
+      return uint8ToDataUrl(photo.thumb);
+    }
+    return undefined;
+  }
+}
+
+async function hydrateChannelAvatarsInBackground(
+  client: TelegramClient,
+  targets: Array<{ id: number; photo: ChatPhoto | null }>,
+): Promise<void> {
+  const pending = targets.filter((t) => t.photo && !channelAvatarCache.has(t.id));
+  if (pending.length === 0) return;
+
+  const updates: Record<number, string> = {};
+  const concurrency = 4;
+  for (let i = 0; i < pending.length; i += concurrency) {
+    const batch = pending.slice(i, i + concurrency);
+    const results = await Promise.all(
+      batch.map(async (item) => ({
+        id: item.id,
+        url: await downloadChannelSmallAvatar(client, item.id, item.photo),
+      })),
+    );
+    for (const r of results) {
+      if (r.url) updates[r.id] = r.url;
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    postWorkerEvent({ type: 'channel_avatars_updated', avatars: updates });
+  }
+}
+
+async function downloadPreviewForMessage(
+  client: TelegramClient,
+  msg: Message,
+): Promise<string | undefined> {
+  const media = msg.media;
+  if (!media) return undefined;
+  let thumb: Thumbnail | null = null;
+
+  if (media.type === 'photo') {
+    thumb = media.getThumbnail('x') ?? media.getThumbnail('m') ?? pickBestDownloadableThumb(media.thumbnails);
+  } else if (media.type === 'audio') {
+    thumb = pickBestDownloadableThumb(media.thumbnails);
+  } else if (media.type === 'video') {
+    thumb =
+      (media.videoCover ? pickBestDownloadableThumb(media.videoCover.thumbnails) : null) ??
+      pickBestDownloadableThumb(media.thumbnails);
+  } else if (media.type === 'document') {
+    thumb = pickBestDownloadableThumb(media.thumbnails);
+  } else if (media.type === 'webpage' && media.preview.photo) {
+    thumb = pickBestDownloadableThumb(media.preview.photo.thumbnails);
+  }
+
+  if (!thumb) return undefined;
+  try {
+    const bytes = await client.downloadAsBuffer(thumb);
+    return uint8ToDataUrl(bytes);
+  } catch {
+    return getInlineStrippedThumbUrl(
+      media.type === 'photo' || media.type === 'audio' || media.type === 'video' || media.type === 'document'
+        ? media.thumbnails
+        : undefined,
+    );
+  }
 }
 
 async function fetchSinglePostStats(
@@ -631,6 +844,8 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
     }
 
     case 'logout': {
+      channelAvatarCache.clear();
+      mediaPreviewCache.clear();
       if (tgClient) {
         try {
           await tgClient.logOut();
@@ -649,9 +864,12 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
     case 'get_channels': {
       if (!tgClient) throw new Error('Client not initialized');
       const channels: ChannelSummary[] = [];
+      const avatarTargets: Array<{ id: number; photo: ChatPhoto | null }> = [];
       for await (const dialog of tgClient.iterDialogs({ limit: 100 })) {
         const peer = dialog.peer;
         if (peer.type === 'chat' && peer.chatType === 'channel' && (peer.isCreator || peer.isAdmin)) {
+          const cachedAvatar = channelAvatarCache.get(peer.id);
+          const instantThumb = peer.photo?.thumb ? uint8ToDataUrl(peer.photo.thumb) : undefined;
           channels.push({
             id: peer.id,
             title: peer.title,
@@ -661,21 +879,30 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
             isAdmin: peer.isAdmin,
             canViewStats: true,
             avatarColor: pickAvatarColor(peer.id),
+            avatarUrl: cachedAvatar ?? instantThumb,
           });
+          if (peer.photo) {
+            avatarTargets.push({ id: peer.id, photo: peer.photo });
+          }
         }
       }
+      // Download sharp 160x160 channel avatars concurrently without blocking dialog list render
+      void hydrateChannelAvatarsInBackground(tgClient, avatarTargets);
       return channels;
     }
 
     case 'fetch_channel_analytics': {
       if (!tgClient) throw new Error('Client not initialized');
-      const fullChat = await tgClient.getFullChat(cmd.channelId);
-      const chat = await tgClient.getChat(cmd.channelId);
+      const client = tgClient;
+      const [fullChat, chat] = await Promise.all([
+        client.getFullChat(cmd.channelId),
+        client.getChat(cmd.channelId),
+      ]);
       const rawFull = fullChat.full;
       const statsDc = rawFull._ === 'channelFull' ? rawFull.statsDc : undefined;
       const canViewStats = fullChat.canViewStats;
 
-      let overview: BroadcastOverviewStats = {
+      const defaultOverview: BroadcastOverviewStats = {
         periodFrom: Date.now() - 7 * 86400_000,
         periodTo: Date.now(),
         followers: { current: fullChat.membersCount ?? 0, previous: fullChat.membersCount ?? 0 },
@@ -686,8 +913,11 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
         recentPostIds: [],
       };
 
-      const inputChannel = chat.inputPeer;
-      if (canViewStats && inputChannel._ === 'inputPeerChannel') {
+      const fetchOverviewPromise = (async (): Promise<BroadcastOverviewStats> => {
+        const inputChannel = chat.inputPeer;
+        if (!canViewStats || inputChannel._ !== 'inputPeerChannel') {
+          return defaultOverview;
+        }
         try {
           const tlInputChannel: tl.RawInputChannel = {
             _: 'inputChannel',
@@ -695,7 +925,7 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
             accessHash: inputChannel.accessHash,
           };
 
-          const bStats = await tgClient.call(
+          const bStats = await client.call(
             {
               _: 'stats.getBroadcastStats',
               dark: true,
@@ -719,19 +949,19 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
             viewsBySourceGraph,
             languagesGraph,
           ] = await Promise.all([
-            resolveStatsGraph(tgClient, 'interactions', 'Interactions', bStats.interactionsGraph, statsDc),
-            resolveStatsGraph(tgClient, 'growth', 'Growth', bStats.growthGraph, statsDc),
-            resolveStatsGraph(tgClient, 'followers', 'Followers', bStats.followersGraph, statsDc),
-            resolveStatsGraph(tgClient, 'topHours', 'Top Hours', bStats.topHoursGraph, statsDc),
-            resolveStatsGraph(tgClient, 'viewsBySource', 'Views by Source', bStats.viewsBySourceGraph, statsDc),
-            resolveStatsGraph(tgClient, 'languages', 'Languages', bStats.languagesGraph, statsDc),
+            resolveStatsGraph(client, 'interactions', 'Interactions', bStats.interactionsGraph, statsDc),
+            resolveStatsGraph(client, 'growth', 'Growth', bStats.growthGraph, statsDc),
+            resolveStatsGraph(client, 'followers', 'Followers', bStats.followersGraph, statsDc),
+            resolveStatsGraph(client, 'topHours', 'Top Hours', bStats.topHoursGraph, statsDc),
+            resolveStatsGraph(client, 'viewsBySource', 'Views by Source', bStats.viewsBySourceGraph, statsDc),
+            resolveStatsGraph(client, 'languages', 'Languages', bStats.languagesGraph, statsDc),
           ]);
 
           const notif = bStats.enabledNotifications;
           const notifPct =
             notif.total > 0 ? Number(((notif.part / notif.total) * 100).toFixed(1)) : 0;
 
-          overview = {
+          return {
             periodFrom: bStats.period.minDate * 1000,
             periodTo: bStats.period.maxDate * 1000,
             followers: { current: bStats.followers.current, previous: bStats.followers.previous },
@@ -751,41 +981,51 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
             languagesGraph,
           };
         } catch {
-          // Channel may have <50 subscribers or stats disabled; fallback to history-derived overview
+          return defaultOverview;
         }
-      }
+      })();
 
-      const rawMessages: RawChannelMessage[] = [];
-      const limit = cmd.maxMessages ?? 400;
-      let count = 0;
+      const fetchHistoryPromise = (async (): Promise<RawChannelMessage[]> => {
+        const rawMessages: RawChannelMessage[] = [];
+        const limit = cmd.maxMessages ?? 400;
+        let count = 0;
 
-      for await (const msg of tgClient.iterHistory(cmd.channelId, { limit })) {
-        if (msg.isService) continue;
-        count += 1;
-        let permalink: string | undefined;
-        try {
-          permalink = msg.link;
-        } catch {
-          permalink = undefined;
+        for await (const msg of client.iterHistory(cmd.channelId, { limit })) {
+          if (msg.isService) continue;
+          count += 1;
+          let permalink: string | undefined;
+          try {
+            permalink = msg.link;
+          } catch {
+            permalink = undefined;
+          }
+
+          rawMessages.push({
+            id: msg.id,
+            date: msg.date.getTime(),
+            text: msg.text,
+            views: msg.views ?? 0,
+            forwards: msg.forwards ?? 0,
+            replies: msg.replies?.count ?? 0,
+            groupedId: msg.groupedId ? msg.groupedId.toString() : null,
+            mediaKind: mapMediaKind(msg),
+            mediaMeta: extractMessageMediaMeta(msg),
+            reactions: mapReactions(msg),
+            permalink,
+          });
+
+          if (count % 50 === 0) {
+            postWorkerEvent({ type: 'scan_progress', channelId: cmd.channelId, scannedCount: count });
+          }
         }
+        return rawMessages;
+      })();
 
-        rawMessages.push({
-          id: msg.id,
-          date: msg.date.getTime(),
-          text: msg.text,
-          views: msg.views ?? 0,
-          forwards: msg.forwards ?? 0,
-          replies: msg.replies?.count ?? 0,
-          groupedId: msg.groupedId ? msg.groupedId.toString() : null,
-          mediaKind: mapMediaKind(msg),
-          reactions: mapReactions(msg),
-          permalink,
-        });
-
-        if (count % 50 === 0) {
-          postWorkerEvent({ type: 'scan_progress', channelId: cmd.channelId, scannedCount: count });
-        }
-      }
+      const [overview, rawMessages, avatarUrl] = await Promise.all([
+        fetchOverviewPromise,
+        fetchHistoryPromise,
+        downloadChannelSmallAvatar(client, chat.id, chat.photo),
+      ]);
 
       const channelSummary: ChannelSummary = {
         id: chat.id,
@@ -798,6 +1038,7 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
         statsDc,
         lastSyncedAt: Date.now(),
         avatarColor: pickAvatarColor(chat.id),
+        avatarUrl,
       };
 
       return {
@@ -805,6 +1046,40 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
         overview,
         rawMessages,
       };
+    }
+
+    case 'fetch_post_media_preview': {
+      if (!tgClient) throw new Error('Client not initialized');
+      const cacheKey = `${cmd.channelId}:${cmd.postKey}`;
+      const cached = mediaPreviewCache.get(cacheKey);
+      if (cached) return cached;
+
+      const ids = cmd.messageIds.slice(0, 10);
+      const msgs = await tgClient.getMessages(cmd.channelId, ids);
+      const items: PostMediaPreviewItem[] = [];
+
+      for (const msg of msgs) {
+        if (!msg) continue;
+        const previewUrl = await downloadPreviewForMessage(tgClient, msg);
+        items.push({
+          messageId: msg.id,
+          mediaKind: mapMediaKind(msg),
+          previewUrl,
+          meta: extractMessageMediaMeta(msg),
+        });
+      }
+
+      const result: PostMediaPreview = {
+        postKey: cmd.postKey,
+        items,
+        loadedAt: Date.now(),
+      };
+      if (mediaPreviewCache.size >= MAX_MEDIA_PREVIEW_CACHE) {
+        const oldestKey = mediaPreviewCache.keys().next().value;
+        if (oldestKey) mediaPreviewCache.delete(oldestKey);
+      }
+      mediaPreviewCache.set(cacheKey, result);
+      return result;
     }
 
     case 'fetch_post_details': {

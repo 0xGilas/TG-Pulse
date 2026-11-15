@@ -16,6 +16,7 @@ import {
   attributeDateFromMessageStats,
   computeChannelBenchmarks,
   formatCompactNumber,
+  getPostDisplayTitle,
 } from '../../utils/analyticsMath';
 import { TelegramTimeChart } from '../charts/TelegramTimeChart';
 
@@ -346,8 +347,18 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         <span className="text-[#5eb5f7]">{sourceLabel}</span>
                       </div>
 
-                      <div className="text-[13px] font-medium text-[#f5f7fa] truncate">
-                        {item.post.text}
+                      <div className="flex items-center gap-2.5">
+                        {item.post.mediaMeta?.thumbUrl && (
+                          <img
+                            src={item.post.mediaMeta.thumbUrl}
+                            alt=""
+                            loading="lazy"
+                            className="w-7 h-7 rounded-md object-cover border border-white/10 shrink-0"
+                          />
+                        )}
+                        <div className="text-[13px] font-medium text-[#f5f7fa] truncate">
+                          {getPostDisplayTitle(item.post, lang)}
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-2.5 pt-0.5" dir="ltr">

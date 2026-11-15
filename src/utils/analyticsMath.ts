@@ -6,11 +6,13 @@ import type {
   DailyDeltaRecord,
   DateAttributionResult,
   FormatInsight,
+  LanguageCode,
   MediaKind,
   MessageDailyActivity,
   ParsedStatsGraph,
   PostDetailedStats,
   PostFilterMode,
+  PostMediaMeta,
   PostRecord,
   PostSortBy,
   PublicForwardRecord,
@@ -110,6 +112,7 @@ export function groupAlbumPosts(
         date: msg.date,
         text: msg.text,
         mediaKind: msg.mediaKind,
+        mediaMeta: msg.mediaMeta,
         views,
         forwards,
         albumTotalItemForwards: forwards,
@@ -138,7 +141,11 @@ export function groupAlbumPosts(
         views: Math.max(0, item.views),
         forwards: Math.max(0, item.forwards),
         caption: item.text.trim() || undefined,
+        mediaMeta: item.mediaMeta,
       }));
+
+      const primaryMediaMeta: PostMediaMeta | undefined =
+        primary.mediaMeta ?? sortedItems.find((i) => Boolean(i.mediaMeta))?.mediaMeta;
 
       const views = Math.max(...sortedItems.map((i) => Math.max(0, i.views)));
       const maxForwards = Math.max(...sortedItems.map((i) => Math.max(0, i.forwards)));
@@ -171,6 +178,7 @@ export function groupAlbumPosts(
         date: primary.date,
         text: primary.text || `Media Album (${sortedItems.length} items)`,
         mediaKind: 'album',
+        mediaMeta: primaryMediaMeta,
         views,
         forwards: maxForwards,
         albumTotalItemForwards: sumForwards,
@@ -632,3 +640,120 @@ export function formatCompactNumber(num: number): string {
   if (Math.abs(num) >= 10_000) return `${(num / 1_000).toFixed(1)}K`;
   return num.toLocaleString('en-US');
 }
+
+/**
+ * Computes deduplicated integer Y-axis ticks so small series (e.g. 0..4 shares)
+ * render crisp unique labels instead of repeated rounded numbers.
+ */
+export function computeAxisTicks(minVal: number, maxVal: number, desiredSteps = 4): number[] {
+  const safeMin = Math.floor(minVal);
+  const safeMax = Math.max(safeMin + 1, Math.ceil(maxVal));
+  const span = safeMax - safeMin;
+
+  if (span <= desiredSteps) {
+    const ticks: number[] = [];
+    for (let v = safeMin; v <= safeMax; v += 1) {
+      ticks.push(v);
+    }
+    return ticks;
+  }
+
+  const ticks: number[] = [];
+  for (let i = 0; i <= desiredSteps; i += 1) {
+    const val = Math.round(safeMin + (i / desiredSteps) * span);
+    if (ticks[ticks.length - 1] !== val) {
+      ticks.push(val);
+    }
+  }
+  return ticks;
+}
+
+/**
+ * Determines whether a multi-series line chart should separate Left & Right Y-axes.
+ * Prevents low-volume series (like Shares) from being crushed flat along the Views 0 baseline.
+ */
+export function shouldUseDualAxis(
+  activeSeries: StatsSeriesLine[],
+  graphType: ParsedStatsGraph['type'],
+  visibleIndices?: number[],
+): boolean {
+  if (graphType !== 'line' || activeSeries.length !== 2) return false;
+
+  const getSeriesMax = (s: StatsSeriesLine) => {
+    if (!visibleIndices || visibleIndices.length === 0) {
+      return Math.max(0, ...s.values);
+    }
+    let m = 0;
+    for (const idx of visibleIndices) {
+      const v = s.values[idx] ?? 0;
+      if (v > m) m = v;
+    }
+    return m;
+  };
+
+  const max0 = getSeriesMax(activeSeries[0]);
+  const max1 = getSeriesMax(activeSeries[1]);
+  const hasViewsAndShares =
+    (/view/i.test(activeSeries[0].label) && /share|forward/i.test(activeSeries[1].label)) ||
+    (/share|forward/i.test(activeSeries[0].label) && /view/i.test(activeSeries[1].label));
+
+  if (hasViewsAndShares) return true;
+
+  const high = Math.max(max0, max1);
+  const low = Math.max(1, Math.min(max0, max1));
+  return high / low >= 3;
+}
+
+export function formatMediaDuration(seconds?: number): string {
+  if (!seconds || seconds <= 0 || !Number.isFinite(seconds)) return '0:00';
+  const total = Math.round(seconds);
+  const hrs = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hrs > 0) {
+    return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+export function formatFileSize(bytes?: number): string {
+  if (!bytes || bytes <= 0 || !Number.isFinite(bytes)) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+export function getPostDisplayTitle(post: PostRecord, lang: LanguageCode): string {
+  const trimmed = post.text.trim();
+  if (trimmed.length > 0) return trimmed;
+
+  const meta = post.mediaMeta;
+  if (post.mediaKind === 'audio') {
+    if (meta?.title && meta?.performer) return `${meta.performer} — ${meta.title}`;
+    if (meta?.title) return meta.title;
+    if (meta?.fileName) return meta.fileName;
+    if (meta?.isVoice) return lang === 'fa' ? `پیام صوتی #${post.primaryId}` : `Voice message #${post.primaryId}`;
+    return lang === 'fa' ? `فایل صوتی / موزیک #${post.primaryId}` : `Audio track #${post.primaryId}`;
+  }
+
+  if (post.mediaKind === 'poll' && meta?.pollQuestion) {
+    return meta.pollQuestion;
+  }
+
+  if (meta?.fileName) return meta.fileName;
+  if (meta?.title) return meta.title;
+
+  const fallbackByKind: Record<MediaKind, { fa: string; en: string }> = {
+    photo: { fa: `پست تصویری #${post.primaryId}`, en: `Photo post #${post.primaryId}` },
+    video: { fa: `پست ویدیویی #${post.primaryId}`, en: `Video post #${post.primaryId}` },
+    audio: { fa: `موزیک #${post.primaryId}`, en: `Audio #${post.primaryId}` },
+    document: { fa: `فایل #${post.primaryId}`, en: `Document #${post.primaryId}` },
+    poll: { fa: `نظرسنجی #${post.primaryId}`, en: `Poll #${post.primaryId}` },
+    album: { fa: `آلبوم رسانه #${post.primaryId}`, en: `Media album #${post.primaryId}` },
+    text: { fa: `پست #${post.primaryId}`, en: `Post #${post.primaryId}` },
+  };
+
+  return fallbackByKind[post.mediaKind]?.[lang] ?? `#${post.primaryId}`;
+}
+

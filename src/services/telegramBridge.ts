@@ -4,6 +4,7 @@ import type {
   ChannelSummary,
   NetworkConfig,
   PostDetailedStats,
+  PostMediaPreview,
   RawChannelMessage,
   TelegramUserSummary,
 } from '../types/analytics';
@@ -21,6 +22,7 @@ export interface BridgeListeners {
   onAuthorized?: (user: TelegramUserSummary) => void;
   onScanProgress?: (channelId: number, scannedCount: number) => void;
   onAttributionProgress?: (channelId: number, completed: number, total: number) => void;
+  onChannelAvatarsUpdated?: (avatars: Record<number, string>) => void;
   onLiveForwardsUpdate?: (channelId: number, msgId: number, forwards: number) => void;
 }
 
@@ -70,6 +72,9 @@ class TelegramWorkerBridge {
       }
       if (msg.type === 'attribution_progress') {
         this.listeners.onAttributionProgress?.(msg.channelId, msg.completed, msg.total);
+      }
+      if (msg.type === 'channel_avatars_updated') {
+        this.listeners.onChannelAvatarsUpdated?.(msg.avatars);
       }
       if (msg.type === 'live_forwards_update') {
         this.listeners.onLiveForwardsUpdate?.(msg.channelId, msg.msgId, msg.forwards);
@@ -170,6 +175,15 @@ class TelegramWorkerBridge {
       postId,
       postKey,
       statsDc,
+    });
+  }
+
+  fetchPostMediaPreview(channelId: number, postKey: string, messageIds: number[]) {
+    return this.invoke<PostMediaPreview>({
+      type: 'fetch_post_media_preview',
+      channelId,
+      postKey,
+      messageIds,
     });
   }
 

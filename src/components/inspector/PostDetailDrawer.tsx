@@ -3,16 +3,20 @@ import { ExternalLink, Layers, RefreshCw, X } from 'lucide-react';
 import type {
   LanguageCode,
   PostDetailedStats,
+  PostMediaPreview,
   PostRecord,
   PublicForwardRecord,
 } from '../../types/analytics';
 import { getTranslations } from '../../i18n/translations';
 import { TelegramTimeChart } from '../charts/TelegramTimeChart';
+import { PostPreviewCard } from './PostPreviewCard';
 
 interface PostDetailDrawerProps {
   lang: LanguageCode;
   post: PostRecord | null;
   details: PostDetailedStats | undefined;
+  mediaPreview?: PostMediaPreview;
+  loadingMediaPreview?: boolean;
   publicForwards: PublicForwardRecord[];
   isSampleMode: boolean;
   loadingDetails: boolean;
@@ -24,6 +28,8 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = ({
   lang,
   post,
   details,
+  mediaPreview,
+  loadingMediaPreview = false,
   publicForwards,
   isSampleMode,
   loadingDetails,
@@ -79,11 +85,14 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = ({
 
         {/* Native Telegram-Style Drawer Content (Clean sections separated by hairlines) */}
         <div className="flex-1 overflow-y-auto divide-y divide-white/[0.06]">
-          {/* Post Body */}
+          {/* Rich Post Media & Caption Preview */}
           <div className="p-5 space-y-2.5">
-            <p className="text-[13px] leading-relaxed text-[#f5f7fa] whitespace-pre-wrap break-words">
-              {post.text}
-            </p>
+            <PostPreviewCard
+              lang={lang}
+              post={post}
+              mediaPreview={mediaPreview}
+              loadingMediaPreview={loadingMediaPreview}
+            />
             {post.permalink && (
               <div dir="ltr" className="text-[11px] text-[#5eb5f7] font-mono-num truncate">
                 {post.permalink}

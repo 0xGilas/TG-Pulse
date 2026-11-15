@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Menu, RefreshCw } from 'lucide-react';
 import type {
   ApiCredentials,
@@ -10,11 +10,11 @@ import type {
   LanguageCode,
   NetworkConfig,
   ParsedStatsGraph,
+  PostMediaPreview,
   PostRecord,
   SessionPersistenceMode,
 } from './types/analytics';
 import { getTranslations } from './i18n/translations';
-import { getSampleDataset } from './data/sampleChannelData';
 import {
   buildSnapshotFromPosts,
   computeEvergreenRatio,
@@ -38,13 +38,25 @@ import {
 } from './utils/cryptoVault';
 import { telegramBridge } from './services/telegramBridge';
 import { AuthScreen } from './components/auth/AuthScreen';
-import { NetworkModal } from './components/auth/NetworkModal';
 import { Sidebar } from './components/layout/Sidebar';
 import { OverviewTab } from './components/dashboard/OverviewTab';
-import { ShareDetectiveTab } from './components/dashboard/ShareDetectiveTab';
-import { AudienceTab } from './components/dashboard/AudienceTab';
-import { PostDetailDrawer } from './components/inspector/PostDetailDrawer';
-import { SnapshotModal } from './components/dashboard/SnapshotModal';
+import { ChannelAvatar } from './components/common/ChannelAvatar';
+
+const NetworkModal = lazy(() =>
+  import('./components/auth/NetworkModal').then((m) => ({ default: m.NetworkModal })),
+);
+const ShareDetectiveTab = lazy(() =>
+  import('./components/dashboard/ShareDetectiveTab').then((m) => ({ default: m.ShareDetectiveTab })),
+);
+const AudienceTab = lazy(() =>
+  import('./components/dashboard/AudienceTab').then((m) => ({ default: m.AudienceTab })),
+);
+const PostDetailDrawer = lazy(() =>
+  import('./components/inspector/PostDetailDrawer').then((m) => ({ default: m.PostDetailDrawer })),
+);
+const SnapshotModal = lazy(() =>
+  import('./components/dashboard/SnapshotModal').then((m) => ({ default: m.SnapshotModal })),
+);
 
 const DEFAULT_NETWORK: NetworkConfig = {
   mode: 'direct',
@@ -153,6 +165,8 @@ export function App() {
     total: number;
   } | null>(null);
   const [loadingPostDetails, setLoadingPostDetails] = useState(false);
+  const [mediaPreviewsByPost, setMediaPreviewsByPost] = useState<Record<string, PostMediaPreview>>({});
+  const [loadingMediaPreview, setLoadingMediaPreview] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
 
   // Sync HTML dir/lang attributes
@@ -194,7 +208,8 @@ export function App() {
     });
   }, []);
 
-  const enterSampleMode = useCallback(() => {
+  const enterSampleMode = useCallback(async () => {
+    const { getSampleDataset } = await import('./data/sampleChannelData');
     const sample = getSampleDataset();
     const firstChannelId = sample.channels[0].id;
     const firstBundle = sample.bundles[firstChannelId];
@@ -364,6 +379,27 @@ export function App() {
       },
       onAttributionProgress: (_chId, completed, total) => {
         setAttributionProgress({ completed, total });
+      },
+      onChannelAvatarsUpdated: (avatars) => {
+        setChannels((prev) =>
+          prev.map((ch) => (avatars[ch.id] ? { ...ch, avatarUrl: avatars[ch.id] } : ch)),
+        );
+        setBundlesByChannel((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          for (const [idStr, url] of Object.entries(avatars)) {
+            const id = Number(idStr);
+            const cur = next[id];
+            if (cur && cur.channel.avatarUrl !== url) {
+              changed = true;
+              next[id] = {
+                ...cur,
+                channel: { ...cur.channel, avatarUrl: url },
+              };
+            }
+          }
+          return changed ? next : prev;
+        });
       },
       onLiveForwardsUpdate: (channelId, msgId, forwards) => {
         setBundlesByChannel((prev) => {
@@ -580,6 +616,8 @@ export function App() {
     setIsSampleMode(false);
     setChannels([]);
     setBundlesByChannel({});
+    setMediaPreviewsByPost({});
+    setLoadingMediaPreview(false);
     setActiveChannelId(null);
     setSelectedPostKey(null);
     setSelectedDateKey(null);
@@ -594,6 +632,46 @@ export function App() {
     if (!activeBundle || !selectedPostKey) return null;
     return activeBundle.posts.find((p) => p.key === selectedPostKey) ?? null;
   }, [activeBundle, selectedPostKey]);
+
+  const selectedPreviewCacheKey =
+    activeBundle && selectedPost ? `${activeBundle.channel.id}:${selectedPost.key}` : null;
+
+  useEffect(() => {
+    if (!selectedPost || !activeBundle || isSampleMode || !selectedPreviewCacheKey) {
+      setLoadingMediaPreview(false);
+      return;
+    }
+    if (mediaPreviewsByPost[selectedPreviewCacheKey]) {
+      setLoadingMediaPreview(false);
+      return;
+    }
+    const needsMediaFetch =
+      selectedPost.mediaKind !== 'text' || Boolean(selectedPost.mediaMeta?.webPageUrl);
+    if (!needsMediaFetch) {
+      setLoadingMediaPreview(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingMediaPreview(true);
+    telegramBridge
+      .fetchPostMediaPreview(activeBundle.channel.id, selectedPost.key, selectedPost.messageIds)
+      .then((preview) => {
+        if (cancelled) return;
+        setMediaPreviewsByPost((prev) => ({
+          ...prev,
+          [selectedPreviewCacheKey]: preview,
+        }));
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoadingMediaPreview(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBundle, isSampleMode, mediaPreviewsByPost, selectedPost, selectedPreviewCacheKey]);
 
   const handleSelectChannel = async (channelId: number) => {
     setActiveChannelId(channelId);
@@ -844,17 +922,21 @@ export function App() {
           onEnterSampleMode={enterSampleMode}
         />
 
-        <NetworkModal
-          open={networkModalOpen}
-          config={network}
-          lang={lang}
-          onClose={() => setNetworkModalOpen(false)}
-          onSave={(next) => {
-            setNetwork(next);
-            networkRef.current = next;
-            saveNetworkConfig(next).catch(() => {});
-          }}
-        />
+        {networkModalOpen && (
+          <Suspense fallback={null}>
+            <NetworkModal
+              open={networkModalOpen}
+              config={network}
+              lang={lang}
+              onClose={() => setNetworkModalOpen(false)}
+              onSave={(next) => {
+                setNetwork(next);
+                networkRef.current = next;
+                saveNetworkConfig(next).catch(() => {});
+              }}
+            />
+          </Suspense>
+        )}
       </>
     );
   }
@@ -879,7 +961,7 @@ export function App() {
         {/* Sticky Frosted Obsidian Header Bar */}
         <header className="sticky top-0 z-30 tg-chrome-glass border-b">
           <div className="px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
-            {/* Zone 1: Channel Title */}
+            {/* Zone 1: Channel Avatar & Title */}
             <div className="flex items-center gap-3 min-w-0">
               <button
                 type="button"
@@ -889,6 +971,7 @@ export function App() {
               >
                 <Menu className="w-5 h-5" />
               </button>
+              {activeBundle && <ChannelAvatar channel={activeBundle.channel} size={30} />}
               <div className="min-w-0">
                 <h1 className="text-sm sm:text-[15px] font-semibold text-[#F0F4F8] truncate">
                   {activeBundle?.channel.title ?? t.appName}
@@ -1011,50 +1094,62 @@ export function App() {
                 />
               )}
 
-              {activeTab === 'detective' && (
-                <ShareDetectiveTab
-                  lang={lang}
-                  posts={activeBundle.posts}
-                  onOpenPost={(p) => setSelectedPostKey(p.key)}
-                />
-              )}
+              <Suspense fallback={null}>
+                {activeTab === 'detective' && (
+                  <ShareDetectiveTab
+                    lang={lang}
+                    posts={activeBundle.posts}
+                    onOpenPost={(p) => setSelectedPostKey(p.key)}
+                  />
+                )}
 
-              {activeTab === 'audience' && (
-                <AudienceTab lang={lang} bundle={activeBundle} />
-              )}
+                {activeTab === 'audience' && (
+                  <AudienceTab lang={lang} bundle={activeBundle} />
+                )}
+              </Suspense>
             </>
           )}
         </main>
       </div>
 
       {/* Post Deep Inspector Drawer */}
-      <PostDetailDrawer
-        lang={lang}
-        post={selectedPost}
-        details={selectedPost && activeBundle ? activeBundle.postStatsByPost[selectedPost.key] : undefined}
-        publicForwards={
-          selectedPost && activeBundle
-            ? activeBundle.publicForwardsByPost[selectedPost.key] ?? []
-            : []
-        }
-        isSampleMode={isSampleMode}
-        loadingDetails={loadingPostDetails}
-        onLoadLiveDetails={handleLoadLivePostDetails}
-        onClose={() => setSelectedPostKey(null)}
-      />
+      {selectedPost && (
+        <Suspense fallback={null}>
+          <PostDetailDrawer
+            lang={lang}
+            post={selectedPost}
+            details={activeBundle ? activeBundle.postStatsByPost[selectedPost.key] : undefined}
+            mediaPreview={
+              selectedPreviewCacheKey ? mediaPreviewsByPost[selectedPreviewCacheKey] : undefined
+            }
+            loadingMediaPreview={loadingMediaPreview}
+            publicForwards={
+              activeBundle ? activeBundle.publicForwardsByPost[selectedPost.key] ?? [] : []
+            }
+            isSampleMode={isSampleMode}
+            loadingDetails={loadingPostDetails}
+            onLoadLiveDetails={handleLoadLivePostDetails}
+            onClose={() => setSelectedPostKey(null)}
+          />
+        </Suspense>
+      )}
 
       {/* Snapshots & Vault Modal */}
-      <SnapshotModal
-        open={snapshotModalOpen}
-        lang={lang}
-        bundle={activeBundle}
-        isSampleMode={isSampleMode}
-        onClose={() => setSnapshotModalOpen(false)}
-        onCaptureSnapshot={handleCaptureSnapshot}
-        onImportSnapshot={handleImportSnapshot}
-        onSaveSessionToVault={handleSaveSessionToVault}
-        onWipeVault={handleWipeVault}
-      />
+      {snapshotModalOpen && (
+        <Suspense fallback={null}>
+          <SnapshotModal
+            open={snapshotModalOpen}
+            lang={lang}
+            bundle={activeBundle}
+            isSampleMode={isSampleMode}
+            onClose={() => setSnapshotModalOpen(false)}
+            onCaptureSnapshot={handleCaptureSnapshot}
+            onImportSnapshot={handleImportSnapshot}
+            onSaveSessionToVault={handleSaveSessionToVault}
+            onWipeVault={handleWipeVault}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

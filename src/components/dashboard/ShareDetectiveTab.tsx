@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Layers, Search } from 'lucide-react';
 import type {
   LanguageCode,
@@ -10,6 +10,7 @@ import { getTranslations } from '../../i18n/translations';
 import {
   computeChannelBenchmarks,
   filterAndSortPosts,
+  getPostDisplayTitle,
 } from '../../utils/analyticsMath';
 
 interface ShareDetectiveTabProps {
@@ -18,15 +19,39 @@ interface ShareDetectiveTabProps {
   onOpenPost: (post: PostRecord) => void;
 }
 
+const PAGE_SIZE = 50;
+
+function useIsDesktop(): boolean {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  return isDesktop;
+}
+
 export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = ({
   lang,
   posts,
   onOpenPost,
 }) => {
   const t = getTranslations(lang);
+  const isDesktop = useIsDesktop();
   const [query, setQuery] = useState('');
   const [filterMode, setFilterMode] = useState<PostFilterMode>('has_shares');
   const [sortBy, setSortBy] = useState<PostSortBy>('shares_desc');
+  const [displayLimit, setDisplayLimit] = useState(PAGE_SIZE);
+
+  useEffect(() => {
+    setDisplayLimit(PAGE_SIZE);
+  }, [query, filterMode, sortBy, posts]);
 
   const referenceNow = useMemo(() => {
     if (posts.length === 0) return Date.now();
@@ -39,6 +64,12 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = ({
     () => filterAndSortPosts(posts, query, filterMode, sortBy, referenceNow),
     [posts, query, filterMode, sortBy, referenceNow],
   );
+
+  const pagedPosts = useMemo(
+    () => visiblePosts.slice(0, displayLimit),
+    [visiblePosts, displayLimit],
+  );
+  const remainingCount = Math.max(0, visiblePosts.length - pagedPosts.length);
 
   const filterButtons: Array<{ id: PostFilterMode; label: string }> = [
     { id: 'all', label: t.filterAll },
@@ -126,162 +157,199 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = ({
         </div>
       ) : (
         <>
-          {/* Mobile Compact List (< md) */}
-          <div className="md:hidden divide-y divide-white/[0.06]">
-            {visiblePosts.map((post) => {
-              const isOutlier = benchmarks.p90Views > 0 && post.views >= benchmarks.p90Views;
-              return (
-                <button
-                  key={post.key}
-                  type="button"
-                  onClick={() => onOpenPost(post)}
-                  className="w-full p-4 text-start hover:bg-white/[0.03] transition-colors space-y-1.5 cursor-pointer"
-                >
-                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#7f91a4] font-mono-num">
-                    <span dir="ltr">#{post.primaryId}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="capitalize">{post.mediaKind}</span>
-                    {post.isAlbum && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="inline-flex items-center gap-1 text-[#5eb5f7]">
-                          <Layers className="w-3 h-3" />
-                          {post.albumChildren.length} {t.itemsLabel}
-                        </span>
-                      </>
-                    )}
-                    {!post.inRecentWindow && post.forwards > 0 && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="text-[#f5a623]">{t.oldPostTag}</span>
-                      </>
-                    )}
-                  </div>
-                  <div className="text-xs font-medium text-[#f5f7fa] line-clamp-2 leading-relaxed">
-                    {post.text}
-                  </div>
-                  <div
-                    dir="ltr"
-                    className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] font-mono-num"
+          {!isDesktop ? (
+            /* Mobile Compact List (< md) */
+            <div className="divide-y divide-white/[0.06]">
+              {pagedPosts.map((post) => {
+                const isOutlier = benchmarks.p90Views > 0 && post.views >= benchmarks.p90Views;
+                return (
+                  <button
+                    key={post.key}
+                    type="button"
+                    onClick={() => onOpenPost(post)}
+                    className="w-full p-4 text-start hover:bg-white/[0.03] transition-colors space-y-1.5 cursor-pointer"
                   >
-                    <span className="text-[#7f91a4]">
-                      {new Date(post.date).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        timeZone: 'UTC',
-                      })}
-                    </span>
-                    <div className="flex items-center gap-2.5">
-                      <span className={isOutlier ? 'text-[#4dcd5e] font-semibold' : 'text-[#f5f7fa]'}>
-                        {post.views} ({getMedianMultiplier(post.views)})
-                      </span>
-                      <span className="text-[#f5a623] font-semibold">
-                        {post.forwards} sh ({post.publicSharesCount}/{post.privateSharesCount})
-                      </span>
-                      <span className="text-[#5eb5f7]">{post.shareRatePercent.toFixed(1)}%</span>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#7f91a4] font-mono-num">
+                      <span dir="ltr">#{post.primaryId}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className="capitalize">{post.mediaKind}</span>
+                      {post.isAlbum && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="inline-flex items-center gap-1 text-[#5eb5f7]">
+                            <Layers className="w-3 h-3" />
+                            {post.albumChildren.length} {t.itemsLabel}
+                          </span>
+                        </>
+                      )}
+                      {!post.inRecentWindow && post.forwards > 0 && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="text-[#f5a623]">{t.oldPostTag}</span>
+                        </>
+                      )}
                     </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Desktop High-Density Table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-start border-collapse">
-              <thead>
-                <tr className="border-b border-white/[0.06] bg-[#111923]/60 text-[11px] font-semibold text-[#7f91a4]">
-                  <th className="py-2.5 px-4 text-start">{t.colPost}</th>
-                  <th className="py-2.5 px-3 text-start whitespace-nowrap">{t.colDate}</th>
-                  <th className="py-2.5 px-3 text-end whitespace-nowrap">{t.colViews}</th>
-                  <th className="py-2.5 px-3 text-end whitespace-nowrap">{t.colShares}</th>
-                  <th className="py-2.5 px-3 text-end whitespace-nowrap">{t.colEvergreen}</th>
-                  <th className="py-2.5 px-3 text-end whitespace-nowrap">{t.colRate}</th>
-                  <th className="py-2.5 px-4 text-end whitespace-nowrap">{t.colReactions}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.06]">
-                {visiblePosts.map((post) => {
-                  const isOutlier = benchmarks.p90Views > 0 && post.views >= benchmarks.p90Views;
-                  return (
-                    <tr key={post.key} className="hover:bg-white/[0.03] transition-colors">
-                      <td className="py-2.5 px-4 max-w-md">
-                        <button
-                          type="button"
-                          onClick={() => onOpenPost(post)}
-                          className="w-full text-start group cursor-pointer"
-                        >
-                          <div className="flex items-center gap-1.5 text-[11px] text-[#7f91a4] font-mono-num">
-                            <span dir="ltr">#{post.primaryId}</span>
-                            <span aria-hidden="true">·</span>
-                            <span className="capitalize">{post.mediaKind}</span>
-                            {post.isAlbum && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className="inline-flex items-center gap-1 text-[#5eb5f7]">
-                                  <Layers className="w-3 h-3" />
-                                  {post.albumChildren.length} {t.itemsLabel}
-                                </span>
-                              </>
-                            )}
-                            {!post.inRecentWindow && post.forwards > 0 && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className="text-[#f5a623]">{t.oldPostTag}</span>
-                              </>
-                            )}
-                          </div>
-                          <div className="mt-0.5 text-[13px] font-medium text-[#f5f7fa] group-hover:text-[#5eb5f7] truncate">
-                            {post.text}
-                          </div>
-                        </button>
-                      </td>
-                      <td className="py-2.5 px-3 text-xs text-[#7f91a4] font-mono-num whitespace-nowrap">
+                    <div className="flex items-center gap-2.5">
+                      {post.mediaMeta?.thumbUrl && (
+                        <img
+                          src={post.mediaMeta.thumbUrl}
+                          alt=""
+                          loading="lazy"
+                          className="w-8 h-8 rounded-md object-cover border border-white/10 shrink-0"
+                        />
+                      )}
+                      <div className="text-xs font-medium text-[#f5f7fa] line-clamp-2 leading-relaxed">
+                        {getPostDisplayTitle(post, lang)}
+                      </div>
+                    </div>
+                    <div
+                      dir="ltr"
+                      className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] font-mono-num"
+                    >
+                      <span className="text-[#7f91a4]">
                         {new Date(post.date).toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric',
                           timeZone: 'UTC',
                         })}
-                      </td>
-                      <td className="py-2.5 px-3 text-end text-xs font-mono-num whitespace-nowrap">
-                        <span dir="ltr" className="inline-flex items-baseline gap-1.5">
-                          <span className="text-[#f5f7fa]">{post.views.toLocaleString('en-US')}</span>
-                          <span className={isOutlier ? 'text-[#4dcd5e] font-semibold' : 'text-[#5d6f82]'}>
-                            ({getMedianMultiplier(post.views)})
+                      </span>
+                      <div className="flex items-center gap-2.5">
+                        <span className={isOutlier ? 'text-[#4dcd5e] font-semibold' : 'text-[#f5f7fa]'}>
+                          {post.views} ({getMedianMultiplier(post.views)})
+                        </span>
+                        <span className="text-[#f5a623] font-semibold">
+                          {post.forwards} sh ({post.publicSharesCount}/{post.privateSharesCount})
+                        </span>
+                        <span className="text-[#5eb5f7]">{post.shareRatePercent.toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            /* Desktop High-Density Table */
+            <div className="overflow-x-auto">
+              <table className="w-full text-start border-collapse">
+                <thead>
+                  <tr className="border-b border-white/[0.06] bg-[#111923]/60 text-[11px] font-semibold text-[#7f91a4]">
+                    <th className="py-2.5 px-4 text-start">{t.colPost}</th>
+                    <th className="py-2.5 px-3 text-start whitespace-nowrap">{t.colDate}</th>
+                    <th className="py-2.5 px-3 text-end whitespace-nowrap">{t.colViews}</th>
+                    <th className="py-2.5 px-3 text-end whitespace-nowrap">{t.colShares}</th>
+                    <th className="py-2.5 px-3 text-end whitespace-nowrap">{t.colEvergreen}</th>
+                    <th className="py-2.5 px-3 text-end whitespace-nowrap">{t.colRate}</th>
+                    <th className="py-2.5 px-4 text-end whitespace-nowrap">{t.colReactions}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.06]">
+                  {pagedPosts.map((post) => {
+                    const isOutlier = benchmarks.p90Views > 0 && post.views >= benchmarks.p90Views;
+                    return (
+                      <tr key={post.key} className="hover:bg-white/[0.03] transition-colors">
+                        <td className="py-2.5 px-4 max-w-md">
+                          <button
+                            type="button"
+                            onClick={() => onOpenPost(post)}
+                            className="w-full text-start group cursor-pointer flex items-center gap-3"
+                          >
+                            {post.mediaMeta?.thumbUrl && (
+                              <img
+                                src={post.mediaMeta.thumbUrl}
+                                alt=""
+                                loading="lazy"
+                                className="w-8 h-8 rounded-md object-cover border border-white/10 shrink-0"
+                              />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 text-[11px] text-[#7f91a4] font-mono-num">
+                                <span dir="ltr">#{post.primaryId}</span>
+                                <span aria-hidden="true">·</span>
+                                <span className="capitalize">{post.mediaKind}</span>
+                                {post.isAlbum && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span className="inline-flex items-center gap-1 text-[#5eb5f7]">
+                                      <Layers className="w-3 h-3" />
+                                      {post.albumChildren.length} {t.itemsLabel}
+                                    </span>
+                                  </>
+                                )}
+                                {!post.inRecentWindow && post.forwards > 0 && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span className="text-[#f5a623]">{t.oldPostTag}</span>
+                                  </>
+                                )}
+                              </div>
+                              <div className="mt-0.5 text-[13px] font-medium text-[#f5f7fa] group-hover:text-[#5eb5f7] truncate">
+                                {getPostDisplayTitle(post, lang)}
+                              </div>
+                            </div>
+                          </button>
+                        </td>
+                        <td className="py-2.5 px-3 text-xs text-[#7f91a4] font-mono-num whitespace-nowrap">
+                          {new Date(post.date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            timeZone: 'UTC',
+                          })}
+                        </td>
+                        <td className="py-2.5 px-3 text-end text-xs font-mono-num whitespace-nowrap">
+                          <span dir="ltr" className="inline-flex items-baseline gap-1.5">
+                            <span className="text-[#f5f7fa]">{post.views.toLocaleString('en-US')}</span>
+                            <span className={isOutlier ? 'text-[#4dcd5e] font-semibold' : 'text-[#5d6f82]'}>
+                              ({getMedianMultiplier(post.views)})
+                            </span>
                           </span>
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-end text-xs font-mono-num whitespace-nowrap">
-                        <span dir="ltr" className="inline-flex items-baseline gap-1.5">
-                          <span className="font-semibold text-[#f5a623]">
-                            {post.forwards.toLocaleString('en-US')}
+                        </td>
+                        <td className="py-2.5 px-3 text-end text-xs font-mono-num whitespace-nowrap">
+                          <span dir="ltr" className="inline-flex items-baseline gap-1.5">
+                            <span className="font-semibold text-[#f5a623]">
+                              {post.forwards.toLocaleString('en-US')}
+                            </span>
+                            <span className="text-[11px] text-[#7f91a4]">
+                              ({post.publicSharesCount}/{post.privateSharesCount})
+                            </span>
                           </span>
-                          <span className="text-[11px] text-[#7f91a4]">
-                            ({post.publicSharesCount}/{post.privateSharesCount})
+                        </td>
+                        <td className="py-2.5 px-3 text-end text-xs font-mono-num whitespace-nowrap">
+                          <span className={post.evergreenShareRatio >= 25 ? 'text-[#4dcd5e]' : 'text-[#7f91a4]'}>
+                            {post.evergreenShareRatio}%
                           </span>
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-end text-xs font-mono-num whitespace-nowrap">
-                        <span className={post.evergreenShareRatio >= 25 ? 'text-[#4dcd5e]' : 'text-[#7f91a4]'}>
-                          {post.evergreenShareRatio}%
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-end text-xs text-[#5eb5f7] font-mono-num whitespace-nowrap">
-                        {post.shareRatePercent.toFixed(2)}%
-                      </td>
-                      <td className="py-2.5 px-4 text-end text-xs text-[#7f91a4] font-mono-num whitespace-nowrap">
-                        <span dir="ltr" className="inline-block">
-                          {post.reactionsCount} / {post.replies}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-end text-xs text-[#5eb5f7] font-mono-num whitespace-nowrap">
+                          {post.shareRatePercent.toFixed(2)}%
+                        </td>
+                        <td className="py-2.5 px-4 text-end text-xs text-[#7f91a4] font-mono-num whitespace-nowrap">
+                          <span dir="ltr" className="inline-block">
+                            {post.reactionsCount} / {post.replies}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {remainingCount > 0 && (
+            <div className="p-3.5 border-t border-white/[0.06] bg-[#0B0F14]/40 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setDisplayLimit((prev) => prev + PAGE_SIZE)}
+                className="rounded-lg border border-white/10 bg-[#11161D] px-4 py-1.5 text-xs font-medium text-[#5EC2F6] hover:bg-white/[0.06] transition-colors cursor-pointer"
+              >
+                {lang === 'fa'
+                  ? `نمایش ${Math.min(PAGE_SIZE, remainingCount)} پست بیشتر (${remainingCount} باقی‌مانده)`
+                  : `Show ${Math.min(PAGE_SIZE, remainingCount)} more posts (${remainingCount} remaining)`}
+              </button>
+            </div>
+          )}
         </>
       )}
     </section>
   );
 };
+

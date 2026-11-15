@@ -51,6 +51,7 @@ export interface ChannelSummary {
   statsDc?: number;
   lastSyncedAt?: number;
   avatarColor: string;
+  avatarUrl?: string;
 }
 
 export interface StatsSeriesLine {
@@ -81,6 +82,47 @@ export interface ReactionCount {
 
 export type MediaKind = 'text' | 'photo' | 'video' | 'audio' | 'document' | 'poll' | 'album';
 
+export interface PollOptionSummary {
+  text: string;
+  voters: number;
+  chosen?: boolean;
+}
+
+export interface PostMediaMeta {
+  title?: string;
+  performer?: string;
+  durationSec?: number;
+  fileName?: string;
+  mimeType?: string;
+  fileSizeBytes?: number;
+  width?: number;
+  height?: number;
+  isVoice?: boolean;
+  isAnimation?: boolean;
+  isRound?: boolean;
+  pollQuestion?: string;
+  pollVoters?: number;
+  pollIsQuiz?: boolean;
+  pollIsClosed?: boolean;
+  pollOptions?: PollOptionSummary[];
+  webPageSite?: string;
+  webPageUrl?: string;
+  thumbUrl?: string;
+}
+
+export interface PostMediaPreviewItem {
+  messageId: number;
+  mediaKind: Exclude<MediaKind, 'album'>;
+  previewUrl?: string;
+  meta?: PostMediaMeta;
+}
+
+export interface PostMediaPreview {
+  postKey: string;
+  items: PostMediaPreviewItem[];
+  loadedAt: number;
+}
+
 export interface RawChannelMessage {
   id: number;
   date: number; // unix ms
@@ -90,6 +132,7 @@ export interface RawChannelMessage {
   replies: number;
   groupedId: string | null;
   mediaKind: Exclude<MediaKind, 'album'>;
+  mediaMeta?: PostMediaMeta;
   reactions: ReactionCount[];
   permalink?: string;
 }
@@ -100,6 +143,7 @@ export interface AlbumChildItem {
   views: number;
   forwards: number;
   caption?: string;
+  mediaMeta?: PostMediaMeta;
 }
 
 export interface MessageDailyActivity {
@@ -118,6 +162,7 @@ export interface PostRecord {
   date: number; // unix ms
   text: string;
   mediaKind: MediaKind;
+  mediaMeta?: PostMediaMeta;
   views: number;
   forwards: number;
   albumTotalItemForwards: number;

@@ -8,6 +8,7 @@ import type {
 import { getTranslations } from '../../i18n/translations';
 import { formatCompactNumber } from '../../utils/analyticsMath';
 import { BrandLogo } from '../common/BrandLogo';
+import { ChannelAvatar } from '../common/ChannelAvatar';
 
 interface SidebarProps {
   lang: LanguageCode;
@@ -121,12 +122,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     : 'border-transparent text-[#8B9BB0] hover:bg-white/[0.04] hover:text-[#F0F4F8]'
                 }`}
               >
-                <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                  style={{ backgroundColor: ch.avatarColor }}
-                >
-                  {ch.title.slice(0, 2).toUpperCase()}
-                </div>
+                <ChannelAvatar channel={ch} size={36} />
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-semibold truncate text-[#F0F4F8]">
                     {ch.title}
