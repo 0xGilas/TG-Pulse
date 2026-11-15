@@ -446,13 +446,16 @@ async function hydrateChannelAvatarsInBackground(
 async function downloadPreviewForMessage(
   client: TelegramClient,
   msg: Message,
+  preferCompact = false,
 ): Promise<string | undefined> {
   const media = msg.media;
   if (!media) return undefined;
   let thumb: Thumbnail | null = null;
 
   if (media.type === 'photo') {
-    thumb = media.getThumbnail('x') ?? media.getThumbnail('m') ?? pickBestDownloadableThumb(media.thumbnails);
+    thumb = preferCompact
+      ? media.getThumbnail('m') ?? media.getThumbnail('x') ?? pickBestDownloadableThumb(media.thumbnails)
+      : media.getThumbnail('x') ?? media.getThumbnail('m') ?? pickBestDownloadableThumb(media.thumbnails);
   } else if (media.type === 'audio') {
     thumb = pickBestDownloadableThumb(media.thumbnails);
   } else if (media.type === 'video') {
@@ -1055,18 +1058,27 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
       if (cached) return cached;
 
       const ids = cmd.messageIds.slice(0, 10);
-      const msgs = await tgClient.getMessages(cmd.channelId, ids);
+      const msgs = (await tgClient.getMessages(cmd.channelId, ids)).filter(
+        (m): m is Message => Boolean(m),
+      );
+      const preferCompact = msgs.length > 1;
       const items: PostMediaPreviewItem[] = [];
+      const BATCH_SIZE = 4;
 
-      for (const msg of msgs) {
-        if (!msg) continue;
-        const previewUrl = await downloadPreviewForMessage(tgClient, msg);
-        items.push({
-          messageId: msg.id,
-          mediaKind: mapMediaKind(msg),
-          previewUrl,
-          meta: extractMessageMediaMeta(msg),
-        });
+      for (let i = 0; i < msgs.length; i += BATCH_SIZE) {
+        const batch = msgs.slice(i, i + BATCH_SIZE);
+        const resolved = await Promise.all(
+          batch.map(async (msg) => {
+            const previewUrl = await downloadPreviewForMessage(tgClient!, msg, preferCompact);
+            return {
+              messageId: msg.id,
+              mediaKind: mapMediaKind(msg),
+              previewUrl,
+              meta: extractMessageMediaMeta(msg),
+            } satisfies PostMediaPreviewItem;
+          }),
+        );
+        items.push(...resolved);
       }
 
       const result: PostMediaPreview = {

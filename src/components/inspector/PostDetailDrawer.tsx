@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Layers, RefreshCw, X } from 'lucide-react';
 import type {
   LanguageCode,
@@ -10,6 +10,24 @@ import type {
 import { getTranslations } from '../../i18n/translations';
 import { TelegramTimeChart } from '../charts/TelegramTimeChart';
 import { PostPreviewCard } from './PostPreviewCard';
+
+const UTC_DATETIME_FMT = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'UTC',
+});
+
+const UTC_DATE_FMT = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+const DRAWER_ROW_LIMIT = 40;
 
 interface PostDetailDrawerProps {
   lang: LanguageCode;
@@ -24,7 +42,7 @@ interface PostDetailDrawerProps {
   onClose: () => void;
 }
 
-export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = ({
+export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
   lang,
   post,
   details,
@@ -37,39 +55,42 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = ({
   onClose,
 }) => {
   const t = getTranslations(lang);
-  if (!post) return null;
+  const [showAllDaily, setShowAllDaily] = useState(false);
+  const [showAllForwards, setShowAllForwards] = useState(false);
+
+  useEffect(() => {
+    setShowAllDaily(false);
+    setShowAllForwards(false);
+  }, [post?.key]);
 
   const forwardsList = details?.publicForwards ?? publicForwards;
-  const activeDailyRows = (details?.dailyBreakdown ?? []).filter(
-    (row) => row.views > 0 || row.shares > 0,
+  const activeDailyRows = useMemo(
+    () => (details?.dailyBreakdown ?? []).filter((row) => row.views > 0 || row.shares > 0),
+    [details?.dailyBreakdown],
   );
+
+  if (!post) return null;
+
+  const visibleDailyRows = showAllDaily ? activeDailyRows : activeDailyRows.slice(0, DRAWER_ROW_LIMIT);
+  const visibleForwards = showAllForwards ? forwardsList : forwardsList.slice(0, DRAWER_ROW_LIMIT);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex justify-end bg-black/70"
       role="dialog"
       aria-modal="true"
       aria-labelledby="post-drawer-title"
     >
       <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
-      <div className="relative z-10 w-full max-w-lg tg-sheet-glass border-y-0 border-e-0 h-full flex flex-col">
+      <div className="relative z-10 w-full max-w-lg tg-drawer-surface border-y-0 border-e-0 h-full flex flex-col">
         {/* Drawer Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.08]">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.08] bg-[#10151D]">
           <div>
             <h2 id="post-drawer-title" className="text-sm font-semibold text-[#f5f7fa]">
               {t.drawerTitle}
             </h2>
             <div dir="ltr" className="text-xs text-[#7f91a4] font-mono-num mt-0.5 text-start">
-              #{post.primaryId} ·{' '}
-              {new Date(post.date).toLocaleString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                timeZone: 'UTC',
-              })}{' '}
-              UTC
+              #{post.primaryId} · {UTC_DATETIME_FMT.format(post.date)} UTC
             </div>
           </div>
 
@@ -83,8 +104,8 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = ({
           </button>
         </div>
 
-        {/* Native Telegram-Style Drawer Content (Clean sections separated by hairlines) */}
-        <div className="flex-1 overflow-y-auto divide-y divide-white/[0.06]">
+        {/* Native Telegram-Style Drawer Content (Isolated scroll layer, zero nested blur) */}
+        <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-white/[0.06]">
           {/* Rich Post Media & Caption Preview */}
           <div className="p-5 space-y-2.5">
             <PostPreviewCard
@@ -231,8 +252,8 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = ({
               <div className="text-[13px] font-semibold text-[#5eb5f7]">
                 {t.dailyBreakdownTableTitle}
               </div>
-              <div className="divide-y divide-white/[0.06] max-h-48 overflow-y-auto border-t border-white/[0.06]">
-                {activeDailyRows.map((row) => (
+              <div className="divide-y divide-white/[0.06] max-h-48 overflow-y-auto overscroll-contain border-t border-white/[0.06]">
+                {visibleDailyRows.map((row) => (
                   <div
                     key={row.dateKey}
                     dir="ltr"
@@ -248,6 +269,17 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = ({
                   </div>
                 ))}
               </div>
+              {!showAllDaily && activeDailyRows.length > DRAWER_ROW_LIMIT && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllDaily(true)}
+                  className="text-[11px] font-medium text-[#5EC2F6] hover:underline cursor-pointer"
+                >
+                  {lang === 'fa'
+                    ? `نمایش همه ${activeDailyRows.length} روز`
+                    : `Show all ${activeDailyRows.length} days`}
+                </button>
+              )}
             </div>
           )}
 
@@ -257,42 +289,51 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = ({
             {forwardsList.length === 0 ? (
               <p className="text-xs text-[#7f91a4] leading-relaxed">{t.noPublicForwards}</p>
             ) : (
-              <div className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
-                {forwardsList.map((fwd) => (
-                  <div
-                    key={`${fwd.channelId}-${fwd.messageId}`}
-                    className="flex items-center justify-between gap-3 py-2.5"
+              <>
+                <div className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
+                  {visibleForwards.map((fwd) => (
+                    <div
+                      key={`${fwd.channelId}-${fwd.messageId}`}
+                      className="flex items-center justify-between gap-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-[#f5f7fa] truncate">
+                          {fwd.channelTitle}
+                          {fwd.channelUsername && (
+                            <span dir="ltr" className="inline-block text-[#5eb5f7] font-mono-num ms-1.5">
+                              @{fwd.channelUsername}
+                            </span>
+                          )}
+                        </div>
+                        <div dir="ltr" className="text-[11px] text-[#7f91a4] font-mono-num mt-0.5 text-start">
+                          {UTC_DATE_FMT.format(fwd.date)} · msg #{fwd.messageId}
+                        </div>
+                      </div>
+                      <div dir="ltr" className="flex items-center gap-2 shrink-0 text-xs font-mono-num text-[#4dcd5e]">
+                        <span>{fwd.views.toLocaleString('en-US')} views</span>
+                        <ExternalLink className="w-3.5 h-3.5 text-[#7f91a4]" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {!showAllForwards && forwardsList.length > DRAWER_ROW_LIMIT && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllForwards(true)}
+                    className="text-[11px] font-medium text-[#5EC2F6] hover:underline cursor-pointer"
                   >
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold text-[#f5f7fa] truncate">
-                        {fwd.channelTitle}
-                        {fwd.channelUsername && (
-                          <span dir="ltr" className="inline-block text-[#5eb5f7] font-mono-num ms-1.5">
-                            @{fwd.channelUsername}
-                          </span>
-                        )}
-                      </div>
-                      <div dir="ltr" className="text-[11px] text-[#7f91a4] font-mono-num mt-0.5 text-start">
-                        {new Date(fwd.date).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                          timeZone: 'UTC',
-                        })}{' '}
-                        · msg #{fwd.messageId}
-                      </div>
-                    </div>
-                    <div dir="ltr" className="flex items-center gap-2 shrink-0 text-xs font-mono-num text-[#4dcd5e]">
-                      <span>{fwd.views.toLocaleString('en-US')} views</span>
-                      <ExternalLink className="w-3.5 h-3.5 text-[#7f91a4]" />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    {lang === 'fa'
+                      ? `نمایش همه ${forwardsList.length} بازنشر عمومی`
+                      : `Show all ${forwardsList.length} public forwards`}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
       </div>
     </div>
   );
-};
+});
+
+PostDetailDrawer.displayName = 'PostDetailDrawer';

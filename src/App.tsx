@@ -166,6 +166,8 @@ export function App() {
   } | null>(null);
   const [loadingPostDetails, setLoadingPostDetails] = useState(false);
   const [mediaPreviewsByPost, setMediaPreviewsByPost] = useState<Record<string, PostMediaPreview>>({});
+  const mediaPreviewsRef = useRef<Record<string, PostMediaPreview>>({});
+  mediaPreviewsRef.current = mediaPreviewsByPost;
   const [loadingMediaPreview, setLoadingMediaPreview] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -642,12 +644,13 @@ export function App() {
       setLoadingMediaPreview(false);
       return;
     }
-    if (mediaPreviewsByPost[selectedPreviewCacheKey]) {
+    if (mediaPreviewsRef.current[selectedPreviewCacheKey]) {
       setLoadingMediaPreview(false);
       return;
     }
     const needsMediaFetch =
-      selectedPost.mediaKind !== 'text' || Boolean(selectedPost.mediaMeta?.webPageUrl);
+      (selectedPost.mediaKind !== 'text' && selectedPost.mediaKind !== 'poll') ||
+      Boolean(selectedPost.mediaMeta?.webPageUrl);
     if (!needsMediaFetch) {
       setLoadingMediaPreview(false);
       return;
@@ -672,7 +675,19 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeBundle, isSampleMode, mediaPreviewsByPost, selectedPost, selectedPreviewCacheKey]);
+  }, [activeBundle, isSampleMode, selectedPost, selectedPreviewCacheKey]);
+
+  const handleOpenPost = useCallback((p: PostRecord) => {
+    setSelectedPostKey(p.key);
+  }, []);
+
+  const handleCloseDrawer = useCallback(() => {
+    setSelectedPostKey(null);
+  }, []);
+
+  const handleSelectDate = useCallback((dk: string) => {
+    startTransition(() => setSelectedDateKey(dk));
+  }, []);
 
   const handleSelectChannel = async (channelId: number) => {
     startTransition(() => {
@@ -688,7 +703,7 @@ export function App() {
     }
   };
 
-  const handleLoadLivePostDetails = async (post: PostRecord) => {
+  const handleLoadLivePostDetails = useCallback(async (post: PostRecord) => {
     if (!activeBundle || isSampleMode) return;
     setLoadingPostDetails(true);
     try {
@@ -738,7 +753,7 @@ export function App() {
     } finally {
       setLoadingPostDetails(false);
     }
-  };
+  }, [activeBundle, isSampleMode]);
 
   const handleScanDateAttribution = async () => {
     if (!activeBundle || isSampleMode || scanningAttribution) return;
@@ -1093,8 +1108,8 @@ export function App() {
                   scanningAttribution={scanningAttribution}
                   attributionProgress={attributionProgress}
                   onScanAttribution={handleScanDateAttribution}
-                  onSelectDate={(dk) => startTransition(() => setSelectedDateKey(dk))}
-                  onOpenPost={(p) => setSelectedPostKey(p.key)}
+                  onSelectDate={handleSelectDate}
+                  onOpenPost={handleOpenPost}
                 />
               )}
 
@@ -1103,7 +1118,7 @@ export function App() {
                   <ShareDetectiveTab
                     lang={lang}
                     posts={activeBundle.posts}
-                    onOpenPost={(p) => setSelectedPostKey(p.key)}
+                    onOpenPost={handleOpenPost}
                   />
                 )}
 
@@ -1133,7 +1148,7 @@ export function App() {
             isSampleMode={isSampleMode}
             loadingDetails={loadingPostDetails}
             onLoadLiveDetails={handleLoadLivePostDetails}
-            onClose={() => setSelectedPostKey(null)}
+            onClose={handleCloseDrawer}
           />
         </Suspense>
       )}

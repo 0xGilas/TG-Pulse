@@ -28,7 +28,7 @@ interface PostPreviewCardProps {
   loadingMediaPreview?: boolean;
 }
 
-export const PostPreviewCard: React.FC<PostPreviewCardProps> = ({
+export const PostPreviewCard: React.FC<PostPreviewCardProps> = React.memo(({
   lang,
   post,
   mediaPreview,
@@ -73,6 +73,7 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = ({
             <img
               src={previewSrc}
               alt={getPostDisplayTitle(post, lang)}
+              decoding="async"
               className={`w-full max-h-72 object-contain bg-[#090C10] transition duration-300 ${
                 isBlurryThumbOnly ? 'blur-sm scale-[1.02]' : ''
               }`}
@@ -104,6 +105,7 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = ({
               <img
                 src={previewSrc}
                 alt={meta?.title ?? labels.audioFallback}
+                decoding="async"
                 className={`w-full h-full object-cover ${isBlurryThumbOnly ? 'blur-xs' : ''}`}
               />
             ) : meta?.isVoice ? (
@@ -156,6 +158,7 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = ({
             <img
               src={previewSrc}
               alt={getPostDisplayTitle(post, lang)}
+              decoding="async"
               className={`w-full max-h-64 object-cover bg-[#090C10] ${
                 isBlurryThumbOnly ? 'blur-sm scale-[1.02]' : ''
               }`}
@@ -169,7 +172,7 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = ({
 
           <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent pointer-events-none" />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-11 h-11 rounded-full bg-black/65 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm">
+            <div className="w-11 h-11 rounded-full bg-black/75 border border-white/25 text-white flex items-center justify-center">
               <Play className="w-5 h-5 fill-current ms-0.5" />
             </div>
           </div>
@@ -307,6 +310,8 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = ({
                     <img
                       src={childThumb}
                       alt={childMeta?.title || childMeta?.fileName || `Item ${idx + 1}`}
+                      loading="lazy"
+                      decoding="async"
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                   ) : (
@@ -379,4 +384,6 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = ({
       )}
     </div>
   );
-};
+});
+
+PostPreviewCard.displayName = 'PostPreviewCard';

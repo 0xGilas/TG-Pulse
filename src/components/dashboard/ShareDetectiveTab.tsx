@@ -37,7 +37,7 @@ function useIsDesktop(): boolean {
   return isDesktop;
 }
 
-export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = ({
+export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = React.memo(({
   lang,
   posts,
   onOpenPost,
@@ -352,5 +352,7 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = ({
       )}
     </section>
   );
-};
+});
+
+ShareDetectiveTab.displayName = 'ShareDetectiveTab';
 
