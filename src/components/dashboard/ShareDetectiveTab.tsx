@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Layers, Search } from 'lucide-react';
 import type {
   LanguageCode,
@@ -48,10 +48,11 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = ({
   const [filterMode, setFilterMode] = useState<PostFilterMode>('has_shares');
   const [sortBy, setSortBy] = useState<PostSortBy>('shares_desc');
   const [displayLimit, setDisplayLimit] = useState(PAGE_SIZE);
+  const deferredQuery = useDeferredValue(query);
 
   useEffect(() => {
     setDisplayLimit(PAGE_SIZE);
-  }, [query, filterMode, sortBy, posts]);
+  }, [deferredQuery, filterMode, sortBy, posts]);
 
   const referenceNow = useMemo(() => {
     if (posts.length === 0) return Date.now();
@@ -61,8 +62,8 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = ({
   const benchmarks = useMemo(() => computeChannelBenchmarks(posts), [posts]);
 
   const visiblePosts = useMemo(
-    () => filterAndSortPosts(posts, query, filterMode, sortBy, referenceNow),
-    [posts, query, filterMode, sortBy, referenceNow],
+    () => filterAndSortPosts(posts, deferredQuery, filterMode, sortBy, referenceNow),
+    [posts, deferredQuery, filterMode, sortBy, referenceNow],
   );
 
   const pagedPosts = useMemo(

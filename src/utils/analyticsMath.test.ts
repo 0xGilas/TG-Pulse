@@ -15,6 +15,7 @@ import {
   getPostDisplayTitle,
   groupAlbumPosts,
   parseTelegramStatsGraph,
+  resolveDualAxisPlan,
   shouldUseDualAxis,
 } from './analyticsMath';
 import type { ParsedStatsGraph, PostDetailedStats, RawChannelMessage } from '../types/analytics';
@@ -209,8 +210,35 @@ test('dual-axis detection and integer tick computation prevent crushed Shares li
     { key: 'y1', label: 'Shares', color: '#f5a623', values: [0, 4, 3] },
   ];
   assert.equal(shouldUseDualAxis(viewsAndShares, 'line'), true);
+  assert.equal(shouldUseDualAxis(viewsAndShares, 'step'), true);
   assert.equal(shouldUseDualAxis([viewsAndShares[0]], 'line'), false);
   assert.equal(shouldUseDualAxis(viewsAndShares, 'bar'), false);
+
+  const reversedOrder = [
+    { key: 'y0', label: 'Shares', color: '#f5a623', values: [0, 4, 3] },
+    { key: 'y1', label: 'Views', color: '#3390ec', values: [120, 785, 650] },
+  ];
+  const reversedPlan = resolveDualAxisPlan(reversedOrder, 'line', undefined, true);
+  assert.equal(reversedPlan.isDualAxis, true);
+  assert.deepEqual(reversedPlan.leftSeriesIndices, [1]);
+  assert.deepEqual(reversedPlan.rightSeriesIndices, [0]);
+
+  const parsedYScaled = parseTelegramStatsGraph(
+    'tg-1',
+    'Interactions',
+    JSON.stringify({
+      columns: [
+        ['x', Date.UTC(2026, 10, 15)],
+        ['y0', 5],
+        ['y1', 1],
+      ],
+      types: { x: 'x', y0: 'line', y1: 'line' },
+      names: { y0: 'Views', y1: 'Shares' },
+      colors: { y0: 'NIGHT#3390ec', y1: 'NIGHT#f5a623' },
+      y_scaled: true,
+    }),
+  );
+  assert.equal(parsedYScaled.yScaled, true);
 });
 
 test('media formatters and getPostDisplayTitle handle captionless audio and poll posts cleanly', () => {

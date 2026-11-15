@@ -47,15 +47,15 @@
   background-position: 0 0, 12px 12px;
 }
 
-/* Tactile frosted panel surface (uses Tailwind backdrop utilities so Vite/LightningCSS preserves unprefixed + webkit rules) */
+/* Tactile obsidian panel surface: crisp specular border without costly per-card backdrop blur during scroll */
 .tg-panel {
-  @apply backdrop-blur-md backdrop-saturate-150;
-  background-color: rgba(17, 22, 29, 0.86);
+  background: linear-gradient(180deg, rgba(20, 26, 35, 0.94) 0%, rgba(14, 19, 26, 0.96) 100%);
   border: 1px solid var(--tg-border);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  contain: layout style;
 }
 
-/* Sticky frosted obsidian chrome header (high-contrast, never washed out or transparent) */
+/* Sticky frosted obsidian chrome header (GPU-composited so scrolling never repaints underlying cards) */
 .tg-chrome-glass {
   @apply backdrop-blur-xl backdrop-saturate-150;
   background-color: rgba(13, 18, 24, 0.88);
@@ -63,9 +63,11 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 12px 32px -18px rgba(0, 0, 0, 0.85);
+  transform: translateZ(0);
+  will-change: transform;
 }
 
-/* Liquid Glass reserved for floating modals, tooltips, and the inspector drawer */
+/* Liquid Glass reserved for floating modals, tooltips, and the inspector drawer (isolated GPU layer) */
 .tg-sheet-glass {
   @apply backdrop-blur-2xl backdrop-saturate-150;
   background-color: rgba(16, 21, 28, 0.92);
@@ -73,10 +75,11 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
     0 24px 56px -18px rgba(0, 0, 0, 0.82);
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .tg-panel,
   .tg-chrome-glass,
   .tg-sheet-glass {
     backdrop-filter: none;

@@ -18,7 +18,7 @@ const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const WEEKDAYS_FA = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
 const HOUR_SLOTS = ['00–04', '04–08', '08–12', '12–16', '16–20', '20–24'];
 
-export const AudienceTab: React.FC<AudienceTabProps> = ({ lang, bundle }) => {
+export const AudienceTab: React.FC<AudienceTabProps> = React.memo(({ lang, bundle }) => {
   const t = getTranslations(lang);
   const { overview, posts } = bundle;
   const insights = useMemo(() => computeFormatInsights(posts), [posts]);
@@ -148,7 +148,8 @@ export const AudienceTab: React.FC<AudienceTabProps> = ({ lang, bundle }) => {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {overview.viewsBySourceGraph && (
           <TelegramTimeChart
-            graph={{ ...overview.viewsBySourceGraph, title: t.viewsBySourceTitle }}
+            graph={overview.viewsBySourceGraph}
+            titleOverride={t.viewsBySourceTitle}
             height={220}
             showRangeSlider={false}
           />
@@ -225,4 +226,6 @@ export const AudienceTab: React.FC<AudienceTabProps> = ({ lang, bundle }) => {
       </section>
     </div>
   );
-};
+});
+
+AudienceTab.displayName = 'AudienceTab';

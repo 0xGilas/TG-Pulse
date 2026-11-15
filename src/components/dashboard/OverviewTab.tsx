@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowUpRight,
   ExternalLink,
@@ -42,7 +42,9 @@ function calcDeltaPct(curr: number, prev: number): { text: string; positive: boo
   };
 }
 
-export const OverviewTab: React.FC<OverviewTabProps> = ({
+const ATTRIBUTION_PAGE_SIZE = 30;
+
+export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
   lang,
   bundle,
   isSampleMode,
@@ -55,6 +57,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 }) => {
   const t = getTranslations(lang);
   const { overview, posts, postStatsByPost, dailyDeltas, publicForwardsByPost } = bundle;
+  const [ledgerLimit, setLedgerLimit] = useState(ATTRIBUTION_PAGE_SIZE);
+
+  useEffect(() => {
+    setLedgerLimit(ATTRIBUTION_PAGE_SIZE);
+  }, [selectedDateKey, bundle.channel.id]);
 
   const avgShareRate = useMemo(() => {
     if (overview.viewsPerPost.current <= 0) return 0;
@@ -214,8 +221,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       {/* Interactions Chart with Clickable Date Selection */}
       {overview.interactionsGraph && (
         <TelegramTimeChart
-          graph={{ ...overview.interactionsGraph, title: t.interactionsTitle }}
+          graph={overview.interactionsGraph}
+          titleOverride={t.interactionsTitle}
           subtitle={t.interactionsHint}
+          dualAxisHint={lang === 'fa' ? 'محور چپ: ویو · محور راست: شیر' : 'Left: Views · Right: Shares'}
           selectedDateKey={selectedDateKey}
           onSelectDate={onSelectDate}
           height={250}
@@ -308,7 +317,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           {/* Attributed Posts Rows */}
           {attribution.contributions.length > 0 ? (
             <div className="divide-y divide-white/[0.06]">
-              {attribution.contributions.map((item) => {
+              {attribution.contributions.slice(0, ledgerLimit).map((item) => {
                 const sourceLabel =
                   item.source === 'message_stats'
                     ? t.sourceMessageStats
@@ -392,6 +401,19 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   </button>
                 );
               })}
+              {attribution.contributions.length > ledgerLimit && (
+                <div className="p-3 bg-[#0B0F14]/40 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setLedgerLimit((prev) => prev + ATTRIBUTION_PAGE_SIZE)}
+                    className="rounded-lg border border-white/10 bg-[#11161D] px-4 py-1.5 text-xs font-medium text-[#5EC2F6] hover:bg-white/[0.06] transition-colors cursor-pointer"
+                  >
+                    {lang === 'fa'
+                      ? `نمایش بیشتر (${attribution.contributions.length - ledgerLimit} مورد دیگر)`
+                      : `Show more (${attribution.contributions.length - ledgerLimit} remaining)`}
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="px-5 py-5 text-xs text-[#7f91a4]">
@@ -441,14 +463,16 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {overview.growthGraph && (
           <TelegramTimeChart
-            graph={{ ...overview.growthGraph, title: t.growthTitle }}
+            graph={overview.growthGraph}
+            titleOverride={t.growthTitle}
             height={210}
             showRangeSlider={false}
           />
         )}
         {overview.followersGraph && (
           <TelegramTimeChart
-            graph={{ ...overview.followersGraph, title: t.followersTitle }}
+            graph={overview.followersGraph}
+            titleOverride={t.followersTitle}
             height={210}
             showRangeSlider={false}
           />
@@ -456,4 +480,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       </div>
     </div>
   );
-};
+});
+
+OverviewTab.displayName = 'OverviewTab';

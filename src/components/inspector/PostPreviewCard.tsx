@@ -119,13 +119,13 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = ({
           </div>
 
           <div className="min-w-0 flex-1 space-y-1">
-            <div className="text-[13px] font-semibold text-[#F0F4F8] truncate">
+            <div dir="auto" className="text-[13px] font-semibold text-[#F0F4F8] truncate">
               {meta?.isVoice
                 ? labels.voiceMsg
                 : meta?.title || meta?.fileName || labels.audioFallback}
             </div>
             {meta?.performer && (
-              <div className="text-xs text-[#8B9BB0] truncate">{meta.performer}</div>
+              <div dir="auto" className="text-xs text-[#8B9BB0] truncate">{meta.performer}</div>
             )}
             <div
               dir="ltr"
@@ -370,7 +370,10 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = ({
 
       {/* CAPTION TEXT (If present) */}
       {post.text.trim().length > 0 && (
-        <p className="text-[13px] leading-relaxed text-[#F0F4F8] whitespace-pre-wrap break-words">
+        <p
+          dir="auto"
+          className="text-[13px] leading-relaxed text-[#F0F4F8] whitespace-pre-wrap break-words"
+        >
           {post.text}
         </p>
       )}

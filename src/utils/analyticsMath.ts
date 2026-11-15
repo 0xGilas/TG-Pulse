@@ -467,12 +467,13 @@ export function parseTelegramStatsGraph(id: string, title: string, rawJson: stri
       types?: Record<string, string>;
       names?: Record<string, string>;
       colors?: Record<string, string>;
+      y_scaled?: boolean;
     };
 
     const columns = parsed.columns ?? [];
     const xCol = columns.find((col) => col[0] === 'x' || parsed.types?.[col[0]] === 'x');
     if (!xCol) {
-      return { id, title, type: 'line', timestamps: [], series: [] };
+      return { id, title, type: 'line', timestamps: [], series: [], yScaled: Boolean(parsed.y_scaled) };
     }
 
     const timestamps = xCol.slice(1).map((val) => Number(val));
@@ -503,7 +504,14 @@ export function parseTelegramStatsGraph(id: string, title: string, rawJson: stri
       });
     }
 
-    return { id, title, type: graphType, timestamps, series };
+    return {
+      id,
+      title,
+      type: graphType,
+      timestamps,
+      series,
+      yScaled: Boolean(parsed.y_scaled),
+    };
   } catch (err) {
     return {
       id,
@@ -668,40 +676,85 @@ export function computeAxisTicks(minVal: number, maxVal: number, desiredSteps = 
   return ticks;
 }
 
+export interface DualAxisPlan {
+  isDualAxis: boolean;
+  leftSeriesIndices: number[];
+  rightSeriesIndices: number[];
+}
+
+function getVisibleSeriesMax(s: StatsSeriesLine, visibleIndices?: number[]): number {
+  if (!visibleIndices || visibleIndices.length === 0) {
+    let m = 0;
+    for (const v of s.values) {
+      if (v > m) m = v;
+    }
+    return m;
+  }
+  let m = 0;
+  for (const idx of visibleIndices) {
+    const v = s.values[idx] ?? 0;
+    if (v > m) m = v;
+  }
+  return m;
+}
+
 /**
- * Determines whether a multi-series line chart should separate Left & Right Y-axes.
+ * Resolves Left & Right Y-axis assignment for line/step charts.
+ * Always pins Views to the Left axis and Shares/Forwards to the Right axis,
+ * even when Telegram orders columns as [Shares, Views] or marks `y_scaled: true`.
+ */
+export function resolveDualAxisPlan(
+  activeSeries: StatsSeriesLine[],
+  graphType: ParsedStatsGraph['type'],
+  visibleIndices?: number[],
+  yScaled?: boolean,
+): DualAxisPlan {
+  const defaultLeft = activeSeries.map((_, idx) => idx);
+  if ((graphType !== 'line' && graphType !== 'step') || activeSeries.length < 2) {
+    return { isDualAxis: false, leftSeriesIndices: defaultLeft, rightSeriesIndices: [] };
+  }
+
+  const sharesIdx = activeSeries.findIndex((s) => /share|forward|بازنشر|شیر|اشتراک/i.test(s.label));
+  const viewsIdx = activeSeries.findIndex((s) => /view|بازدید|ویو|نمایش/i.test(s.label));
+
+  if (viewsIdx !== -1 && sharesIdx !== -1 && viewsIdx !== sharesIdx) {
+    const leftSeriesIndices: number[] = [];
+    const rightSeriesIndices: number[] = [sharesIdx];
+    for (let i = 0; i < activeSeries.length; i += 1) {
+      if (i !== sharesIdx) leftSeriesIndices.push(i);
+    }
+    return { isDualAxis: true, leftSeriesIndices, rightSeriesIndices };
+  }
+
+  const maxes = activeSeries.map((s) => getVisibleSeriesMax(s, visibleIndices));
+  const high = Math.max(...maxes);
+  const lowVal = Math.min(...maxes);
+  const highIdx = maxes.indexOf(high);
+  const lowIdx = maxes.lastIndexOf(lowVal);
+
+  if (yScaled || high / Math.max(1, lowVal) >= 3) {
+    const rightIdx = lowIdx !== highIdx ? lowIdx : activeSeries.length - 1;
+    const leftSeriesIndices: number[] = [];
+    for (let i = 0; i < activeSeries.length; i += 1) {
+      if (i !== rightIdx) leftSeriesIndices.push(i);
+    }
+    return { isDualAxis: true, leftSeriesIndices, rightSeriesIndices: [rightIdx] };
+  }
+
+  return { isDualAxis: false, leftSeriesIndices: defaultLeft, rightSeriesIndices: [] };
+}
+
+/**
+ * Determines whether a multi-series chart should separate Left & Right Y-axes.
  * Prevents low-volume series (like Shares) from being crushed flat along the Views 0 baseline.
  */
 export function shouldUseDualAxis(
   activeSeries: StatsSeriesLine[],
   graphType: ParsedStatsGraph['type'],
   visibleIndices?: number[],
+  yScaled?: boolean,
 ): boolean {
-  if (graphType !== 'line' || activeSeries.length !== 2) return false;
-
-  const getSeriesMax = (s: StatsSeriesLine) => {
-    if (!visibleIndices || visibleIndices.length === 0) {
-      return Math.max(0, ...s.values);
-    }
-    let m = 0;
-    for (const idx of visibleIndices) {
-      const v = s.values[idx] ?? 0;
-      if (v > m) m = v;
-    }
-    return m;
-  };
-
-  const max0 = getSeriesMax(activeSeries[0]);
-  const max1 = getSeriesMax(activeSeries[1]);
-  const hasViewsAndShares =
-    (/view/i.test(activeSeries[0].label) && /share|forward/i.test(activeSeries[1].label)) ||
-    (/share|forward/i.test(activeSeries[0].label) && /view/i.test(activeSeries[1].label));
-
-  if (hasViewsAndShares) return true;
-
-  const high = Math.max(max0, max1);
-  const low = Math.max(1, Math.min(max0, max1));
-  return high / low >= 3;
+  return resolveDualAxisPlan(activeSeries, graphType, visibleIndices, yScaled).isDualAxis;
 }
 
 export function formatMediaDuration(seconds?: number): string {

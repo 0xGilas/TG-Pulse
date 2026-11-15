@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { Camera, Menu, RefreshCw } from 'lucide-react';
 import type {
   ApiCredentials,
@@ -168,6 +168,7 @@ export function App() {
   const [mediaPreviewsByPost, setMediaPreviewsByPost] = useState<Record<string, PostMediaPreview>>({});
   const [loadingMediaPreview, setLoadingMediaPreview] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
   // Sync HTML dir/lang attributes
   useEffect(() => {
@@ -674,12 +675,15 @@ export function App() {
   }, [activeBundle, isSampleMode, mediaPreviewsByPost, selectedPost, selectedPreviewCacheKey]);
 
   const handleSelectChannel = async (channelId: number) => {
-    setActiveChannelId(channelId);
-    setSelectedPostKey(null);
-    const existing = bundlesByChannel[channelId];
-    if (existing) {
-      setSelectedDateKey(pickDefaultDateKey(existing.overview.interactionsGraph));
-    } else if (!isSampleMode) {
+    startTransition(() => {
+      setActiveChannelId(channelId);
+      setSelectedPostKey(null);
+      const existing = bundlesByChannel[channelId];
+      if (existing) {
+        setSelectedDateKey(pickDefaultDateKey(existing.overview.interactionsGraph));
+      }
+    });
+    if (!bundlesByChannel[channelId] && !isSampleMode) {
       await loadLiveChannelBundle(channelId);
     }
   };
@@ -993,7 +997,7 @@ export function App() {
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => startTransition(() => setActiveTab(tab.id))}
                     className={`rounded-md px-3 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                       active
                         ? 'bg-[#2AABEE] text-[#090C10] font-semibold'
@@ -1049,7 +1053,7 @@ export function App() {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => startTransition(() => setActiveTab(tab.id))}
                   className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium whitespace-nowrap cursor-pointer ${
                     active ? 'bg-[#2AABEE] text-[#090C10] font-semibold' : 'text-[#8B9BB0]'
                   }`}
@@ -1089,7 +1093,7 @@ export function App() {
                   scanningAttribution={scanningAttribution}
                   attributionProgress={attributionProgress}
                   onScanAttribution={handleScanDateAttribution}
-                  onSelectDate={(dk) => setSelectedDateKey(dk)}
+                  onSelectDate={(dk) => startTransition(() => setSelectedDateKey(dk))}
                   onOpenPost={(p) => setSelectedPostKey(p.key)}
                 />
               )}

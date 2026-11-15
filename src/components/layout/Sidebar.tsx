@@ -40,7 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const t = getTranslations(lang);
 
   const sidebarBody = (
-    <div className="flex flex-col h-full bg-[#0D1117]/95 backdrop-blur-xl border-e border-white/[0.08] w-[264px] shrink-0">
+    <div className="flex flex-col h-full bg-[#0D1117]/95 border-e border-white/[0.08] w-[264px] shrink-0">
       {/* Brand Row */}
       <div className="h-14 px-4 flex items-center justify-between border-b border-white/[0.08]">
         <div className="flex items-center gap-2.5 min-w-0">

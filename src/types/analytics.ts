@@ -67,6 +67,7 @@ export interface ParsedStatsGraph {
   type: 'line' | 'bar' | 'stacked_bar' | 'step' | 'pie';
   timestamps: number[]; // unix ms
   series: StatsSeriesLine[];
+  yScaled?: boolean;
   error?: string;
 }
 

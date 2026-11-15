@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import QRCode from 'qrcode';
 import {
   ArrowRight,
   ChevronDown,
@@ -131,11 +130,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       return;
     }
     let cancelled = false;
-    QRCode.toDataURL(qrUrl, {
-      width: 212,
-      margin: 2,
-      color: { dark: '#090C10', light: '#FFFFFF' },
-    })
+    import('qrcode')
+      .then((mod) =>
+        mod.default.toDataURL(qrUrl, {
+          width: 212,
+          margin: 2,
+          color: { dark: '#090C10', light: '#FFFFFF' },
+        }),
+      )
       .then((dataUrl) => {
         if (!cancelled) setQrDataUrl(dataUrl);
       })

@@ -215,8 +215,11 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = ({
           {details?.viewsGraph && (
             <div className="p-4">
               <TelegramTimeChart
-                graph={{ ...details.viewsGraph, title: t.postTrendTitle }}
-                height={180}
+                graph={details.viewsGraph}
+                titleOverride={t.postTrendTitle}
+                dualAxisHint={lang === 'fa' ? 'محور چپ: ویو · محور راست: شیر' : 'Left: Views · Right: Shares'}
+                height={196}
+                compact
                 showRangeSlider={false}
               />
             </div>

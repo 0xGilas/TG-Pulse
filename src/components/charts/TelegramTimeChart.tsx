@@ -1,20 +1,23 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import type { ParsedStatsGraph, StatsSeriesLine } from '../../types/analytics';
 import {
   computeAxisTicks,
   formatCompactNumber,
   formatDateKey,
-  shouldUseDualAxis,
+  resolveDualAxisPlan,
 } from '../../utils/analyticsMath';
 
 interface TelegramTimeChartProps {
   graph: ParsedStatsGraph;
+  titleOverride?: string;
   subtitle?: string;
+  dualAxisHint?: string;
   selectedDateKey?: string | null;
   onSelectDate?: (dateKey: string) => void;
   height?: number;
   showRangeSlider?: boolean;
+  compact?: boolean;
 }
 
 function formatAxisDate(ts: number): string {
@@ -67,17 +70,23 @@ function getSeriesBounds(
 export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
   ({
     graph,
+    titleOverride,
     subtitle,
+    dualAxisHint,
     selectedDateKey,
     onSelectDate,
     height = 240,
     showRangeSlider = true,
+    compact = false,
   }) => {
+    const chartTitle = titleOverride ?? graph.title;
     const totalPoints = graph.timestamps.length;
     const [rangeStart, setRangeStart] = useState(0);
     const [rangeEnd, setRangeEnd] = useState(() => Math.max(0, totalPoints - 1));
     const [hiddenSeries, setHiddenSeries] = useState<Record<string, boolean>>({});
     const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+    const hoverRafRef = useRef<number | null>(null);
+    const pendingHoverRef = useRef<number | null>(null);
 
     // Reset slider bounds when switching channels or loading a fresh graph range
     useEffect(() => {
@@ -86,8 +95,20 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
       setHoverIdx(null);
     }, [graph.id, totalPoints]);
 
-    const clampedStart = Math.max(0, Math.min(rangeStart, Math.max(0, totalPoints - 2)));
-    const clampedEnd = Math.max(clampedStart + 1, Math.min(rangeEnd, Math.max(0, totalPoints - 1)));
+    useEffect(() => {
+      return () => {
+        if (hoverRafRef.current !== null) {
+          cancelAnimationFrame(hoverRafRef.current);
+        }
+      };
+    }, []);
+
+    const clampedStart =
+      totalPoints <= 1 ? 0 : Math.max(0, Math.min(rangeStart, totalPoints - 2));
+    const clampedEnd =
+      totalPoints <= 1
+        ? Math.max(0, totalPoints - 1)
+        : Math.max(clampedStart + 1, Math.min(rangeEnd, totalPoints - 1));
 
     const visibleIndices = useMemo(() => {
       if (totalPoints === 0) return [];
@@ -103,15 +124,25 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
       [graph.series, hiddenSeries],
     );
 
-    const isDualAxis = useMemo(
-      () => shouldUseDualAxis(activeSeries, graph.type, visibleIndices),
-      [activeSeries, graph.type, visibleIndices],
+    const dualAxisPlan = useMemo(
+      () => resolveDualAxisPlan(activeSeries, graph.type, visibleIndices, graph.yScaled),
+      [activeSeries, graph.type, visibleIndices, graph.yScaled],
     );
 
+    const isDualAxis = dualAxisPlan.isDualAxis;
+    const rightSeriesIdx = dualAxisPlan.rightSeriesIndices[0] ?? -1;
+    const leftSeriesIdx = dualAxisPlan.leftSeriesIndices[0] ?? 0;
+
     const { leftMin, leftMax, rightMin, rightMax, leftTicks, rightTicks } = useMemo(() => {
-      if (isDualAxis && activeSeries.length === 2) {
-        const left = getSeriesBounds([activeSeries[0]], visibleIndices, graph.type, true);
-        const right = getSeriesBounds([activeSeries[1]], visibleIndices, graph.type, true);
+      if (isDualAxis && rightSeriesIdx !== -1) {
+        const leftList = dualAxisPlan.leftSeriesIndices
+          .map((i) => activeSeries[i])
+          .filter(Boolean);
+        const rightList = dualAxisPlan.rightSeriesIndices
+          .map((i) => activeSeries[i])
+          .filter(Boolean);
+        const left = getSeriesBounds(leftList, visibleIndices, graph.type, true);
+        const right = getSeriesBounds(rightList, visibleIndices, graph.type, true);
         return {
           leftMin: left.minVal,
           leftMax: left.maxVal,
@@ -131,28 +162,34 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
         leftTicks: computeAxisTicks(unified.minVal, unified.maxVal, 4),
         rightTicks: [] as number[],
       };
-    }, [isDualAxis, activeSeries, visibleIndices, graph.type]);
+    }, [isDualAxis, rightSeriesIdx, dualAxisPlan, activeSeries, visibleIndices, graph.type]);
 
-    const svgWidth = 760;
-    const padLeft = 46;
-    const padRight = isDualAxis ? 44 : 16;
-    const padTop = isDualAxis ? 22 : 16;
+    const svgWidth = compact ? 480 : 760;
+    const padLeft = compact ? 42 : 48;
+    const padRight = isDualAxis ? (compact ? 38 : 46) : 16;
+    const padTop = isDualAxis ? 24 : 16;
     const padBottom = 30;
     const plotW = svgWidth - padLeft - padRight;
     const plotH = height - padTop - padBottom;
 
-    const getX = (localIdx: number) => {
-      if (visibleIndices.length <= 1) return padLeft + plotW / 2;
-      return padLeft + (localIdx / (visibleIndices.length - 1)) * plotW;
-    };
+    const getX = useCallback(
+      (localIdx: number) => {
+        if (visibleIndices.length <= 1) return padLeft + plotW / 2;
+        return padLeft + (localIdx / (visibleIndices.length - 1)) * plotW;
+      },
+      [visibleIndices.length, padLeft, plotW],
+    );
 
-    const getY = (val: number, seriesIdx = 0) => {
-      const useRight = isDualAxis && seriesIdx === 1;
-      const min = useRight ? rightMin : leftMin;
-      const max = useRight ? rightMax : leftMax;
-      const ratio = (val - min) / (max - min || 1);
-      return padTop + plotH - ratio * plotH;
-    };
+    const getY = useCallback(
+      (val: number, seriesIdx = 0) => {
+        const useRight = isDualAxis && dualAxisPlan.rightSeriesIndices.includes(seriesIdx);
+        const min = useRight ? rightMin : leftMin;
+        const max = useRight ? rightMax : leftMax;
+        const ratio = (val - min) / (max - min || 1);
+        return padTop + plotH - ratio * plotH;
+      },
+      [isDualAxis, dualAxisPlan.rightSeriesIndices, rightMin, leftMin, rightMax, leftMax, padTop, plotH],
+    );
 
     const toggleSeries = (key: string) => {
       setHiddenSeries((prev) => {
@@ -163,7 +200,53 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
       });
     };
 
-    // Memoize static polylines / bars separately from hoverIdx so pointer scrubbing is 60fps
+    const resolveLocalIdxFromPointer = useCallback(
+      (e: React.PointerEvent<SVGRectElement> | React.MouseEvent<SVGRectElement>) => {
+        if (visibleIndices.length <= 1) return 0;
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (rect.width <= 0) return 0;
+        const relX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        return Math.round(relX * (visibleIndices.length - 1));
+      },
+      [visibleIndices.length],
+    );
+
+    const handleOverlayPointerMove = useCallback(
+      (e: React.PointerEvent<SVGRectElement>) => {
+        const idx = resolveLocalIdxFromPointer(e);
+        pendingHoverRef.current = idx;
+        if (hoverRafRef.current !== null) return;
+        hoverRafRef.current = requestAnimationFrame(() => {
+          hoverRafRef.current = null;
+          const nextIdx = pendingHoverRef.current;
+          setHoverIdx((prev) => (prev === nextIdx ? prev : nextIdx));
+        });
+      },
+      [resolveLocalIdxFromPointer],
+    );
+
+    const handleOverlayPointerLeave = useCallback(() => {
+      pendingHoverRef.current = null;
+      if (hoverRafRef.current !== null) {
+        cancelAnimationFrame(hoverRafRef.current);
+        hoverRafRef.current = null;
+      }
+      setHoverIdx(null);
+    }, []);
+
+    const handleOverlayClick = useCallback(
+      (e: React.MouseEvent<SVGRectElement>) => {
+        if (!onSelectDate || visibleIndices.length === 0) return;
+        const localIdx = resolveLocalIdxFromPointer(e);
+        const globalIdx = visibleIndices[localIdx];
+        if (globalIdx !== undefined && graph.timestamps[globalIdx] !== undefined) {
+          onSelectDate(formatDateKey(graph.timestamps[globalIdx]));
+        }
+      },
+      [onSelectDate, visibleIndices, resolveLocalIdxFromPointer, graph.timestamps],
+    );
+
+    // Memoize static polylines / bars separately from hoverIdx so pointer scrubbing stays 60fps
     const staticSeriesLayer = useMemo(() => {
       if (graph.type === 'bar' || graph.type === 'stacked_bar') {
         return visibleIndices.map((globalIdx, localIdx) => {
@@ -260,19 +343,16 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
       selectedDateKey,
       plotW,
       plotH,
-      padLeft,
       padTop,
-      leftMin,
       leftMax,
-      rightMin,
-      rightMax,
-      isDualAxis,
+      getX,
+      getY,
     ]);
 
     if (totalPoints === 0) {
       return (
         <div className="tg-panel rounded-xl p-5">
-          <div className="text-[13px] font-semibold text-[#5eb5f7]">{graph.title}</div>
+          <div className="text-[13px] font-semibold text-[#5eb5f7]">{chartTitle}</div>
           <div className="mt-3 text-xs text-[#7f91a4]">
             {graph.error || 'No chart data available for this period.'}
           </div>
@@ -282,16 +362,26 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
 
     const activeHoverGlobalIdx =
       hoverIdx !== null && visibleIndices[hoverIdx] !== undefined ? visibleIndices[hoverIdx] : null;
+    const leftSeries = activeSeries[leftSeriesIdx];
+    const rightSeries = rightSeriesIdx !== -1 ? activeSeries[rightSeriesIdx] : undefined;
 
     return (
-      <section className="tg-panel rounded-xl p-4 sm:p-5" aria-label={graph.title}>
+      <section className="tg-panel rounded-xl p-4 sm:p-5" aria-label={chartTitle}>
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
           <div>
-            <h3 className="text-[13px] font-semibold text-[#5eb5f7]">{graph.title}</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-[13px] font-semibold text-[#5eb5f7]">{chartTitle}</h3>
+              {isDualAxis && dualAxisHint && (
+                <span className="text-[10px] font-medium text-[#8B9BB0] border border-white/10 bg-[#0B0F14]/80 rounded px-1.5 py-0.5">
+                  {dualAxisHint}
+                </span>
+              )}
+            </div>
             {subtitle && <p className="text-xs text-[#7f91a4] mt-0.5">{subtitle}</p>}
           </div>
           <div dir="ltr" className="text-xs text-[#7f91a4] font-mono-num">
-            {formatAxisDate(graph.timestamps[clampedStart])} — {formatAxisDate(graph.timestamps[clampedEnd])}
+            {formatAxisDate(graph.timestamps[clampedStart])}
+            {clampedEnd !== clampedStart ? ` — ${formatAxisDate(graph.timestamps[clampedEnd])}` : ''}
           </div>
         </div>
 
@@ -300,177 +390,174 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
             viewBox={`0 0 ${svgWidth} ${height}`}
             className="w-full h-auto overflow-visible"
             role="img"
-            aria-label={`${graph.title} interactive chart`}
+            aria-label={`${chartTitle} interactive chart`}
           >
             {/* Axis Labels for Dual Axis */}
-            {isDualAxis && activeSeries.length === 2 && (
-              <>
+            {isDualAxis && leftSeries && rightSeries && (
+              <g pointerEvents="none">
                 <text
                   x={padLeft - 8}
-                  y={10}
+                  y={11}
                   textAnchor="end"
-                  className="text-[9px] font-semibold uppercase tracking-wider"
-                  fill={activeSeries[0].color}
+                  className="text-[9.5px] font-semibold uppercase tracking-wider"
+                  fill={leftSeries.color}
                 >
-                  {activeSeries[0].label}
+                  {leftSeries.label}
                 </text>
                 <text
                   x={svgWidth - padRight + 8}
-                  y={10}
+                  y={11}
                   textAnchor="start"
-                  className="text-[9px] font-semibold uppercase tracking-wider"
-                  fill={activeSeries[1].color}
+                  className="text-[9.5px] font-semibold uppercase tracking-wider"
+                  fill={rightSeries.color}
                 >
-                  {activeSeries[1].label}
+                  {rightSeries.label}
                 </text>
-              </>
+              </g>
             )}
 
             {/* Left Y-Axis Ticks & Horizontal Grid Lines */}
-            {leftTicks.map((tick, i) => {
-              const y = getY(tick, 0);
-              return (
-                <g key={`l-${i}-${tick}`}>
-                  <line
-                    x1={padLeft}
-                    y1={y}
-                    x2={svgWidth - padRight}
-                    y2={y}
-                    stroke="rgba(255,255,255,0.06)"
-                    strokeWidth={1}
-                  />
-                  <text
-                    x={padLeft - 8}
-                    y={y + 4}
-                    textAnchor="end"
-                    fill={isDualAxis ? activeSeries[0].color : '#5d6f82'}
-                    className="text-[10px] font-mono-num opacity-90"
-                  >
-                    {formatCompactNumber(tick)}
-                  </text>
-                </g>
-              );
-            })}
-
-            {/* Independent Right Y-Axis Ticks (e.g. Shares separated from Views) */}
-            {isDualAxis &&
-              rightTicks.map((tick, i) => {
-                const y = getY(tick, 1);
+            <g pointerEvents="none">
+              {leftTicks.map((tick, i) => {
+                const y = getY(tick, leftSeriesIdx);
                 return (
-                  <text
-                    key={`r-${i}-${tick}`}
-                    x={svgWidth - padRight + 8}
-                    y={y + 4}
-                    textAnchor="start"
-                    fill={activeSeries[1].color}
-                    className="text-[10px] font-mono-num font-medium opacity-95"
-                  >
-                    {formatCompactNumber(tick)}
-                  </text>
-                );
-              })}
-
-            {/* Selected Date Vertical Highlight */}
-            {selectedDateKey &&
-              visibleIndices.map((globalIdx, localIdx) => {
-                if (formatDateKey(graph.timestamps[globalIdx]) !== selectedDateKey) return null;
-                const x = getX(localIdx);
-                return (
-                  <g key={`sel-${globalIdx}`}>
-                    <rect
-                      x={x - 14}
-                      y={padTop}
-                      width={28}
-                      height={plotH}
-                      rx={6}
-                      fill="rgba(245, 166, 35, 0.12)"
-                    />
+                  <g key={`l-${i}-${tick}`}>
                     <line
-                      x1={x}
-                      y1={padTop}
-                      x2={x}
-                      y2={padTop + plotH}
-                      stroke="#f5a623"
-                      strokeWidth={1.5}
-                      strokeDasharray="3 3"
+                      x1={padLeft}
+                      y1={y}
+                      x2={svgWidth - padRight}
+                      y2={y}
+                      stroke="rgba(255,255,255,0.06)"
+                      strokeWidth={1}
                     />
+                    <text
+                      x={padLeft - 8}
+                      y={y + 4}
+                      textAnchor="end"
+                      fill={isDualAxis && leftSeries ? leftSeries.color : '#5d6f82'}
+                      className="text-[10px] font-mono-num opacity-95"
+                    >
+                      {formatCompactNumber(tick)}
+                    </text>
                   </g>
                 );
               })}
 
-            {/* Memoized Lines / Bars */}
-            {staticSeriesLayer}
+              {/* Independent Right Y-Axis Ticks (e.g. Shares separated from Views) */}
+              {isDualAxis &&
+                rightSeries &&
+                rightTicks.map((tick, i) => {
+                  const y = getY(tick, rightSeriesIdx);
+                  return (
+                    <text
+                      key={`r-${i}-${tick}`}
+                      x={svgWidth - padRight + 8}
+                      y={y + 4}
+                      textAnchor="start"
+                      fill={rightSeries.color}
+                      className="text-[10px] font-mono-num font-semibold opacity-95"
+                    >
+                      {formatCompactNumber(tick)}
+                    </text>
+                  );
+                })}
 
-            {/* Lightweight Interactive Hover Crosshair & Active Dots */}
-            {hoverIdx !== null && visibleIndices[hoverIdx] !== undefined && (
-              <g pointerEvents="none">
-                <line
-                  x1={getX(hoverIdx)}
-                  y1={padTop}
-                  x2={getX(hoverIdx)}
-                  y2={padTop + plotH}
-                  stroke="rgba(255,255,255,0.22)"
-                  strokeWidth={1}
-                />
-                {graph.type !== 'bar' &&
-                  graph.type !== 'stacked_bar' &&
-                  activeSeries.map((s, sIdx) => {
-                    const globalIdx = visibleIndices[hoverIdx];
-                    return (
-                      <circle
-                        key={`hover-${s.key}`}
-                        cx={getX(hoverIdx)}
-                        cy={getY(s.values[globalIdx] ?? 0, sIdx)}
-                        r={4.5}
-                        fill="#090C10"
-                        stroke={s.color}
-                        strokeWidth={2.25}
+              {/* Selected Date Vertical Highlight */}
+              {selectedDateKey &&
+                visibleIndices.map((globalIdx, localIdx) => {
+                  if (formatDateKey(graph.timestamps[globalIdx]) !== selectedDateKey) return null;
+                  const x = getX(localIdx);
+                  return (
+                    <g key={`sel-${globalIdx}`}>
+                      <rect
+                        x={x - 14}
+                        y={padTop}
+                        width={28}
+                        height={plotH}
+                        rx={6}
+                        fill="rgba(245, 166, 35, 0.12)"
                       />
-                    );
-                  })}
-              </g>
-            )}
+                      <line
+                        x1={x}
+                        y1={padTop}
+                        x2={x}
+                        y2={padTop + plotH}
+                        stroke="#f5a623"
+                        strokeWidth={1.5}
+                        strokeDasharray="3 3"
+                      />
+                    </g>
+                  );
+                })}
 
-            {/* X Axis Labels */}
-            {visibleIndices.map((globalIdx, localIdx) => {
-              const step = visibleIndices.length > 10 ? Math.ceil(visibleIndices.length / 7) : 1;
-              if (localIdx % step !== 0 && localIdx !== visibleIndices.length - 1) return null;
-              const dateKey = formatDateKey(graph.timestamps[globalIdx]);
-              const isSelected = selectedDateKey === dateKey;
-              return (
-                <text
-                  key={`x-${globalIdx}`}
-                  x={getX(localIdx)}
-                  y={height - 8}
-                  textAnchor="middle"
-                  className={`text-[10px] font-mono-num ${
-                    isSelected ? 'fill-[#f5a623] font-semibold' : 'fill-[#5d6f82]'
-                  }`}
-                >
-                  {formatAxisDate(graph.timestamps[globalIdx])}
-                </text>
-              );
-            })}
+              {/* Memoized Lines / Bars */}
+              {staticSeriesLayer}
 
-            {/* Clickable / Hoverable Vertical Slots */}
-            {visibleIndices.map((globalIdx, localIdx) => {
-              const colW = plotW / Math.max(1, visibleIndices.length);
-              const dateKey = formatDateKey(graph.timestamps[globalIdx]);
-              return (
-                <rect
-                  key={`hit-${globalIdx}`}
-                  x={getX(localIdx) - colW / 2}
-                  y={padTop}
-                  width={colW}
-                  height={plotH + 22}
-                  fill="transparent"
-                  className={onSelectDate ? 'cursor-pointer' : 'cursor-crosshair'}
-                  onMouseEnter={() => setHoverIdx(localIdx)}
-                  onMouseLeave={() => setHoverIdx(null)}
-                  onClick={() => onSelectDate?.(dateKey)}
-                />
-              );
-            })}
+              {/* Lightweight Interactive Hover Crosshair & Active Dots */}
+              {hoverIdx !== null && visibleIndices[hoverIdx] !== undefined && (
+                <g>
+                  <line
+                    x1={getX(hoverIdx)}
+                    y1={padTop}
+                    x2={getX(hoverIdx)}
+                    y2={padTop + plotH}
+                    stroke="rgba(255,255,255,0.22)"
+                    strokeWidth={1}
+                  />
+                  {graph.type !== 'bar' &&
+                    graph.type !== 'stacked_bar' &&
+                    activeSeries.map((s, sIdx) => {
+                      const globalIdx = visibleIndices[hoverIdx];
+                      return (
+                        <circle
+                          key={`hover-${s.key}`}
+                          cx={getX(hoverIdx)}
+                          cy={getY(s.values[globalIdx] ?? 0, sIdx)}
+                          r={4.5}
+                          fill="#090C10"
+                          stroke={s.color}
+                          strokeWidth={2.25}
+                        />
+                      );
+                    })}
+                </g>
+              )}
+
+              {/* X Axis Labels */}
+              {visibleIndices.map((globalIdx, localIdx) => {
+                const maxLabels = compact ? 5 : 7;
+                const step = visibleIndices.length > maxLabels ? Math.ceil(visibleIndices.length / maxLabels) : 1;
+                if (localIdx % step !== 0 && localIdx !== visibleIndices.length - 1) return null;
+                const dateKey = formatDateKey(graph.timestamps[globalIdx]);
+                const isSelected = selectedDateKey === dateKey;
+                return (
+                  <text
+                    key={`x-${globalIdx}`}
+                    x={getX(localIdx)}
+                    y={height - 8}
+                    textAnchor="middle"
+                    className={`text-[10px] font-mono-num ${
+                      isSelected ? 'fill-[#f5a623] font-semibold' : 'fill-[#5d6f82]'
+                    }`}
+                  >
+                    {formatAxisDate(graph.timestamps[globalIdx])}
+                  </text>
+                );
+              })}
+            </g>
+
+            {/* Single O(1) Interactive Hitbox Layer (eliminates N per-day SVG DOM nodes) */}
+            <rect
+              x={padLeft}
+              y={padTop}
+              width={Math.max(1, plotW)}
+              height={plotH + 22}
+              fill="transparent"
+              className={onSelectDate ? 'cursor-pointer' : 'cursor-crosshair'}
+              onPointerMove={handleOverlayPointerMove}
+              onPointerLeave={handleOverlayPointerLeave}
+              onClick={handleOverlayClick}
+            />
           </svg>
 
           {/* Floating Liquid Glass Tooltip */}
@@ -502,7 +589,7 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
             <span className="text-[11px] text-[#5d6f82] whitespace-nowrap">Range</span>
             <input
               type="range"
-              aria-label={`${graph.title} start range`}
+              aria-label={`${chartTitle} start range`}
               min={0}
               max={Math.max(0, totalPoints - 2)}
               value={clampedStart}
@@ -514,7 +601,7 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
             />
             <input
               type="range"
-              aria-label={`${graph.title} end range`}
+              aria-label={`${chartTitle} end range`}
               min={1}
               max={Math.max(1, totalPoints - 1)}
               value={clampedEnd}
@@ -589,4 +676,3 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
 );
 
 TelegramTimeChart.displayName = 'TelegramTimeChart';
-
