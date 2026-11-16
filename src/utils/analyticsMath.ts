@@ -364,14 +364,11 @@ export function attributeDateFromMessageStats(params: {
     const dayRow = dailyBreakdown.find((d) => d.dateKey === dateKey);
     if (!dayRow || (dayRow.views <= 0 && dayRow.shares <= 0)) continue;
 
-    // Safety check: For any older post (published before dateKey), if it has 0 shares on this date,
-    // discard baseline carryover from index 0 of the graph (e.g. all-time cumulative views at start of stats window)
+    // Any post published before this date MUST have shares on this date to be attributed!
+    // Older posts with 0 shares on this date are baseline carryover / historical views and do not belong in this date's ledger.
     const isOldPost = formatDateKey(post.date) < dateKey;
     if (isOldPost && dayRow.shares === 0) {
-      const isFirstBreakdownDay = dailyBreakdown[0]?.dateKey === dateKey;
-      if (isFirstBreakdownDay || dayRow.views >= post.views) {
-        continue;
-      }
+      continue;
     }
 
     contributionMap.set(post.key, {
@@ -395,6 +392,12 @@ export function attributeDateFromMessageStats(params: {
     // was attributed lifetime forwards due to a missing baseline in older versions
     const deltaEndMs = Date.parse(`${d.dateKey}T23:59:59.999Z`);
     if (deltaEndMs - post.date > 48 * 3600_000 && d.deltaShares >= post.forwards && post.forwards > 0) {
+      continue;
+    }
+
+    // Older posts must have positive deltaShares on this date to be attributed
+    const isOldPost = formatDateKey(post.date) < dateKey;
+    if (isOldPost && d.deltaShares <= 0) {
       continue;
     }
 
@@ -473,31 +476,26 @@ export function attributeDateFromMessageStats(params: {
     }
   }
 
-  // 5) Recent active launch window attribution (e.g. latest post #1406):
-  // Posts published in the recent window within 72h of this date with forwards
-  // contributed to the channel's share activity in this window
+  // 5) Direct publication fallback (e.g. latest post #1406 published on this date):
   for (const post of posts) {
-    if (post.forwards <= 0) continue;
-    const hoursDiff = (selectedDayEnd - post.date) / 3600_000;
-    // Post was published within 72h before or around this date
-    if (hoursDiff >= -14 && hoursDiff <= 72) {
-      const existing = contributionMap.get(post.key);
-      if (!existing) {
-        contributionMap.set(post.key, {
-          post,
-          viewsOnDate: post.views,
-          sharesOnDate: post.forwards,
-          shareContributionPct: 0,
-          viewContributionPct: 0,
-          source: 'message_stats',
-        });
-      } else {
-        if (existing.sharesOnDate === 0) {
-          existing.sharesOnDate = post.forwards;
-        }
-        if (existing.viewsOnDate === 0 && post.views > 0) {
-          existing.viewsOnDate = post.views;
-        }
+    if (formatDateKey(post.date) !== dateKey) continue;
+    if (post.forwards <= 0 && post.views <= 0) continue;
+    const existing = contributionMap.get(post.key);
+    if (!existing) {
+      contributionMap.set(post.key, {
+        post,
+        viewsOnDate: post.views,
+        sharesOnDate: post.forwards,
+        shareContributionPct: 0,
+        viewContributionPct: 0,
+        source: 'message_stats',
+      });
+    } else {
+      if (existing.sharesOnDate === 0 && post.forwards > 0) {
+        existing.sharesOnDate = post.forwards;
+      }
+      if (existing.viewsOnDate === 0 && post.views > 0) {
+        existing.viewsOnDate = post.views;
       }
     }
   }
