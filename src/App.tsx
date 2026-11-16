@@ -70,7 +70,13 @@ const DEFAULT_NETWORK: NetworkConfig = {
   cfRelayUrl: '',
 };
 
-const DEFAULT_API_CREDS: ApiCredentials = {
+export const TELEGRAM_WEB_CREDS: ApiCredentials = {
+  apiId: 2496,
+  apiHash: '8da85b0d5b160252315b0f2ed6729041',
+};
+
+const DEFAULT_API_CREDS: ApiCredentials = TELEGRAM_WEB_CREDS;
+const LEGACY_EMPTY_CREDS: ApiCredentials = {
   apiId: 0,
   apiHash: '',
 };
@@ -453,6 +459,20 @@ export function App() {
       setForceShowApiBox(true);
       setAuthError(
         lang === 'fa'
+          ? 'برای اتصال به تلگرام، وارد کردن API ID و API Hash از my.telegram.org الزامی است.'
+          : 'Please enter your Telegram API ID and API Hash from my.telegram.org.',
+      );
+      return null;
+    }
+    setForceShowApiBox(false);
+    return credsToCheck;
+  };
+
+  const _unusedValidate = (credsToCheck: ApiCredentials = apiCreds): ApiCredentials | null => {
+    if (!isValidApiCreds(credsToCheck)) {
+      setForceShowApiBox(true);
+      setAuthError(
+        lang === 'fa'
           ? 'لطفاً ابتدا API ID و API Hash معتبر خودتان را از my.telegram.org در بخش تنظیمات API وارد کنید.'
           : 'Please enter a valid API ID and API Hash from my.telegram.org inside Custom API Credentials.',
       );
@@ -472,7 +492,14 @@ export function App() {
       await telegramBridge.startQr();
     } catch (err) {
       setAuthStep('idle');
-      setAuthError(err instanceof Error ? err.message : 'QR login failed');
+      const rawMsg = err instanceof Error ? err.message : 'QR login failed';
+      setAuthError(
+        rawMsg.includes('API_ID_INVALID')
+          ? (lang === 'fa'
+              ? 'کد API ID یا API Hash وارد شده توسط تلگرام رد شد. لطفاً ارقام و حروف کپی شده از my.telegram.org را در کادر تنظیمات API دوباره بررسی کنید.'
+              : 'Telegram rejected this API ID / API Hash. Please verify your credentials on my.telegram.org.')
+          : rawMsg
+      );
     }
   };
 
@@ -492,7 +519,14 @@ export function App() {
       }
     } catch (err) {
       setAuthStep('idle');
-      setAuthError(err instanceof Error ? err.message : 'Failed to send code');
+      const rawMsg = err instanceof Error ? err.message : 'Failed to send code';
+      setAuthError(
+        rawMsg.includes('API_ID_INVALID')
+          ? (lang === 'fa'
+              ? 'کد API ID یا API Hash وارد شده توسط تلگرام رد شد. لطفاً ارقام و حروف کپی شده از my.telegram.org را در کادر تنظیمات API دوباره بررسی کنید.'
+              : 'Telegram rejected this API ID / API Hash. Please verify your credentials on my.telegram.org.')
+          : rawMsg
+      );
     }
   };
 
@@ -1044,11 +1078,7 @@ export function App() {
                   className="inline-flex items-center gap-1.5 rounded-lg bg-[#2AABEE] px-3 py-1.5 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${syncingChannel ? 'animate-spin' : ''}`} />
-                  <span>
-                    {syncingChannel
-                      ? `${t.syncingText} (${scanProgressCount})`
-                      : t.syncNowBtn}
-                  </span>
+                  <span>{syncingChannel ? `${t.syncingText} (${scanProgressCount})` : t.syncNowBtn}</span>
                 </button>
               )}
             </div>
@@ -1092,11 +1122,63 @@ export function App() {
           )}
 
           {!activeBundle ? (
-            <div className="tg-panel rounded-2xl p-8 text-center text-sm text-[#7f91a4]">
-              {syncingChannel
-                ? `${t.syncingText} (${scanProgressCount})`
-                : t.noChannels}
-            </div>
+            syncingChannel ? (
+              <div className="space-y-4">
+                <div className="tg-panel rounded-xl p-5 border border-[#2AABEE]/25 bg-[#0B0F14]/90 space-y-3.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <RefreshCw className="w-4 h-4 text-[#2AABEE] animate-spin" />
+                      <div>
+                        <div className="text-sm font-semibold text-[#F0F4F8]">
+                          {t.syncingText}
+                        </div>
+                        <div className="text-xs text-[#8B9BB0] mt-0.5">
+                          {t.syncingChannelSub}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs font-mono-num font-semibold px-2.5 py-1 rounded-md bg-[#2AABEE]/15 text-[#5EC2F6] border border-[#2AABEE]/30">
+                      {scanProgressCount} {lang === 'fa' ? 'پیام دریافت شد' : 'messages scanned'}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                    <div className="p-3 rounded-lg bg-white/[0.03] border border-white/[0.06] flex items-center gap-2.5 text-xs text-[#22C55E]">
+                      <div className="w-2 h-2 rounded-full bg-[#22C55E] shrink-0" />
+                      <span className="truncate">{t.syncStep1}</span>
+                    </div>
+                    <div className="p-3 rounded-lg bg-white/[0.03] border border-white/[0.06] flex items-center gap-2.5 text-xs text-[#F59E0B]">
+                      <div className="w-2 h-2 rounded-full bg-[#F59E0B] animate-ping shrink-0" />
+                      <span className="truncate">{t.syncStep2}</span>
+                    </div>
+                    <div className="p-3 rounded-lg bg-white/[0.03] border border-white/[0.06] flex items-center gap-2.5 text-xs text-[#8B9BB0]">
+                      <div className="w-2 h-2 rounded-full bg-[#8B9BB0] shrink-0" />
+                      <span className="truncate">{t.syncStep3}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="tg-panel rounded-xl overflow-hidden p-5 space-y-6">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <div key={i} className="space-y-2 animate-pulse">
+                        <div className="h-6 w-20 bg-white/[0.08] rounded-md" />
+                        <div className="h-3 w-14 bg-white/[0.04] rounded" />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="h-56 rounded-lg bg-white/[0.02] border border-white/[0.04] flex items-center justify-center animate-pulse">
+                    <span className="text-xs text-[#586778] font-mono-num">
+                      {lang === 'fa' ? 'در حال رندر گراف‌های MTProto...' : 'Rendering MTProto graphs...'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="tg-panel rounded-2xl p-8 text-center text-sm text-[#7f91a4]">
+                {t.noChannels}
+              </div>
+            )
           ) : (
             <>
               {activeTab === 'overview' && (

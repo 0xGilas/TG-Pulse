@@ -76,13 +76,14 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/70"
+      className="fixed inset-0 z-50 flex items-end sm:items-stretch justify-end bg-black/75 backdrop-blur-xs transition-opacity"
       role="dialog"
       aria-modal="true"
       aria-labelledby="post-drawer-title"
     >
       <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
-      <div className="relative z-10 w-full max-w-lg tg-drawer-surface border-y-0 border-e-0 h-full flex flex-col">
+      <div className="relative z-10 w-full sm:max-w-lg tg-drawer-surface border-t sm:border-t-0 sm:border-s border-white/[0.12] max-h-[92vh] sm:max-h-full h-auto sm:h-full rounded-t-2xl sm:rounded-none flex flex-col shadow-2xl overflow-hidden">
+        <div className="w-12 h-1 rounded-full bg-white/20 mx-auto my-2.5 sm:hidden shrink-0" />
         {/* Drawer Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.08] bg-[#10151D]">
           <div>

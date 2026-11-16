@@ -75,7 +75,10 @@ export const AudienceTab: React.FC<AudienceTabProps> = React.memo(({ lang, bundl
           )}
         </div>
 
-        <div className="overflow-x-auto" dir="ltr">
+        <div className="sm:hidden flex items-center justify-center gap-1.5 py-1 text-[11px] text-[#8B9BB0] bg-white/[0.02] rounded-lg border border-white/[0.05]">
+          <span>{t.mobileSwipeHint}</span>
+        </div>
+        <div className="overflow-x-auto pb-1 -mx-2 px-2 sm:mx-0 sm:px-0" dir="ltr">
           <div className="min-w-[540px] space-y-1.5">
             <div className="grid grid-cols-7 gap-1.5 text-[11px] font-mono-num text-[#7f91a4]">
               <div />

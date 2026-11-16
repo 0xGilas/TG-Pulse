@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowUpRight,
+  Flame,
+  Info,
   ExternalLink,
   Layers,
   Radar,
@@ -14,6 +16,7 @@ import type {
 import { getTranslations } from '../../i18n/translations';
 import {
   attributeDateFromMessageStats,
+  formatDateKey,
   computeChannelBenchmarks,
   formatCompactNumber,
   getPostDisplayTitle,
@@ -69,6 +72,33 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
   }, [overview]);
 
   const benchmarks = useMemo(() => computeChannelBenchmarks(posts), [posts]);
+
+  const topSpikeDates = useMemo(() => {
+    const graph = overview.interactionsGraph;
+    if (!graph || graph.timestamps.length === 0) return [];
+
+    const shareSeries =
+      graph.series.find((s) => /share|forward/i.test(s.label) || s.key === 'y1') ?? graph.series[1];
+    const viewSeries =
+      graph.series.find((s) => /view/i.test(s.label) || s.key === 'y0') ?? graph.series[0];
+
+    const points = graph.timestamps.map((ts, idx) => {
+      const shares = shareSeries?.values[idx] ?? 0;
+      const views = viewSeries?.values[idx] ?? 0;
+      const key = formatDateKey(ts);
+      const displayDate = new Date(ts).toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', {
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'UTC',
+      });
+      return { ts, key, displayDate, shares, views, score: shares * 50 + views };
+    });
+
+    return points
+      .filter((p) => p.shares > 0 || p.views > 0)
+      .sort((a, b) => b.shares - a.shares || b.views - a.views)
+      .slice(0, 4);
+  }, [overview.interactionsGraph, lang]);
 
   const attribution = useMemo(() => {
     if (!selectedDateKey) return null;
@@ -218,18 +248,55 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
         </div>
       </section>
 
-      {/* Interactions Chart with Clickable Date Selection */}
-      {overview.interactionsGraph && (
-        <TelegramTimeChart
-          graph={overview.interactionsGraph}
-          titleOverride={t.interactionsTitle}
-          subtitle={t.interactionsHint}
-          dualAxisHint={lang === 'fa' ? 'محور چپ: ویو · محور راست: شیر' : 'Left: Views · Right: Shares'}
-          selectedDateKey={selectedDateKey}
-          onSelectDate={onSelectDate}
-          height={250}
-        />
-      )}
+      {/* Interactions Chart with Clickable Date Selection & Spikes Navigation */}
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 px-1">
+          <div className="flex items-center gap-1.5 text-xs text-[#8B9BB0]">
+            <Info className="w-3.5 h-3.5 text-[#2AABEE] shrink-0" />
+            <span>{t.clickToAttributeHint}</span>
+          </div>
+
+          {topSpikeDates.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] text-[#F59E0B] font-semibold flex items-center gap-1">
+                <Flame className="w-3 h-3" /> {t.spikesTitle}:
+              </span>
+              {topSpikeDates.map((spike) => {
+                const isSelected = selectedDateKey === spike.key;
+                return (
+                  <button
+                    key={spike.key}
+                    type="button"
+                    onClick={() => onSelectDate(spike.key)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-mono-num transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#F59E0B] text-[#090C10] font-semibold shadow-sm shadow-[#F59E0B]/30'
+                        : 'bg-[#11161D] text-[#8B9BB0] hover:text-[#F0F4F8] hover:bg-white/[0.06] border border-white/[0.08]'
+                    }`}
+                  >
+                    <span>{spike.displayDate}</span>
+                    <span className={isSelected ? 'text-[#090C10] font-bold' : 'text-[#F59E0B] font-semibold'}>
+                      +{spike.shares}sh
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {overview.interactionsGraph && (
+          <TelegramTimeChart
+            graph={overview.interactionsGraph}
+            titleOverride={t.interactionsTitle}
+            subtitle={t.interactionsHint}
+            dualAxisHint={lang === 'fa' ? 'محور چپ: ویو · محور راست: شیر' : 'Left: Views · Right: Shares'}
+            selectedDateKey={selectedDateKey}
+            onSelectDate={onSelectDate}
+            height={250}
+          />
+        )}
+      </div>
 
       {/* Exact Per-Date Views & Shares Attribution Ledger */}
       {attribution && (
@@ -237,6 +304,29 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
           className="tg-panel rounded-xl overflow-hidden"
           aria-label={t.attributionTitle}
         >
+          {/* Animated Attribution Progress Bar */}
+          {scanningAttribution && attributionProgress && (
+            <div className="px-5 py-3 border-b border-white/[0.08] bg-[#2AABEE]/[0.08] space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[#5EC2F6] font-medium flex items-center gap-2">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>{t.attributionProgressLabel}</span>
+                </span>
+                <span className="font-mono-num text-[#F0F4F8]">
+                  {Math.round((attributionProgress.completed / Math.max(1, attributionProgress.total)) * 100)}% ({attributionProgress.completed}/{attributionProgress.total})
+                </span>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-[#2AABEE] to-[#5EC2F6] transition-all duration-300 rounded-full"
+                  style={{
+                    width: `${Math.round((attributionProgress.completed / Math.max(1, attributionProgress.total)) * 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-0.5">
               <h3 className="text-[13px] font-semibold text-[#5EC2F6]">
