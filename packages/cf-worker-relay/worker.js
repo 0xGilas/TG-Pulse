@@ -3,6 +3,8 @@
  * Deploy to your own Cloudflare account (`wrangler deploy`) to relay encrypted MTProto
  * WebSocket traffic to official *.web.telegram.org endpoints without installing local software.
  */
+const TELEGRAM_HOST_REGEX = /^(?:[a-zA-Z0-9-]+\.)?web\.telegram\.org$/;
+
 export default {
   async fetch(request) {
     const upgradeHeader = request.headers.get('Upgrade');
@@ -25,16 +27,20 @@ export default {
       return new Response('Invalid target URL', { status: 400 });
     }
 
-    if (
-      targetUrl.protocol !== 'wss:' ||
-      !(targetUrl.hostname === 'web.telegram.org' || targetUrl.hostname.endsWith('.web.telegram.org'))
-    ) {
+    if (targetUrl.protocol !== 'wss:' || !TELEGRAM_HOST_REGEX.test(targetUrl.hostname)) {
       return new Response('Target hostname not allowed', { status: 403 });
     }
 
+    // Clone headers, strip identifying client info for privacy, and rewrite Host
+    const headers = new Headers(request.headers);
+    headers.delete('cf-connecting-ip');
+    headers.delete('x-forwarded-for');
+    headers.delete('x-real-ip');
+    headers.set('Host', targetUrl.hostname);
+
     const httpTarget = targetUrl.toString().replace(/^wss:/, 'https:');
     return fetch(httpTarget, {
-      headers: request.headers,
+      headers,
     });
   },
 };

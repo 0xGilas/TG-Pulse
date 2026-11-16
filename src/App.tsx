@@ -607,6 +607,10 @@ export function App() {
           setAuthError(t.vaultWrongPinError);
           return;
         }
+        if (err.code === 'PIN_LOCKED') {
+          setAuthError(t.vaultPinLockedError);
+          return;
+        }
         if (err.code === 'SESSION_NOT_FOUND') {
           setSavedSessionMeta({ exists: false, hasPin: false });
           setAuthError(err.message);

@@ -5,6 +5,7 @@ import {
   encryptVaultBundle,
   normalizePinDigits,
   VaultError,
+  resetPinLockout,
 } from './cryptoVault';
 
 test('encryptVaultBundle + decryptVaultPayload succeeds with numeric PIN 7743', async () => {
@@ -61,4 +62,34 @@ test('encryptVaultBundle without PIN decrypts cleanly using device key', async (
 
   const decrypted = await decryptVaultPayload(payload);
   assert.equal(decrypted.sessionString, 'device-locked-session');
+});
+
+test('decryptVaultPayload locks out after 5 consecutive incorrect PIN attempts', async () => {
+  resetPinLockout();
+  const payload = await encryptVaultBundle(
+    { sessionString: 'brute-force-target' },
+    '9999',
+  );
+
+  // 4 failed attempts should yield WRONG_PIN
+  for (let i = 0; i < 4; i++) {
+    await assert.rejects(
+      () => decryptVaultPayload(payload, '1111'),
+      (err: unknown) => err instanceof VaultError && err.code === 'WRONG_PIN',
+    );
+  }
+
+  // 5th failed attempt should trigger lockout
+  await assert.rejects(
+    () => decryptVaultPayload(payload, '1111'),
+    (err: unknown) => err instanceof VaultError && err.code === 'WRONG_PIN',
+  );
+
+  // 6th attempt should be blocked with PIN_LOCKED
+  await assert.rejects(
+    () => decryptVaultPayload(payload, '9999'), // even with correct PIN, must be locked!
+    (err: unknown) => err instanceof VaultError && err.code === 'PIN_LOCKED',
+  );
+
+  resetPinLockout();
 });

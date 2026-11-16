@@ -66,6 +66,7 @@ export const translations = {
     demoExplain:
       'کانال‌های نمونه با آمار روزانه تک‌تک پست‌ها، تفکیک شیر عمومی و خصوصی و ماتریس زمان‌بندی.',
     vaultWrongPinError: 'رمز قفل نشست (PIN) اشتباه است. لطفاً دوباره بررسی کنید.',
+    vaultPinLockedError: 'تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً ۳۰ ثانیه صبر کرده و مجدداً تلاش کنید.',
     vaultPinRequiredError: 'لطفاً رمز قفل نشست (PIN) را وارد کنید.',
     vaultRevokedError: 'نشست ذخیره‌شده از طرف تلگرام منقضی یا لغو شده است. لطفاً دوباره وارد شوید.',
     vaultSavedSuccess: 'نشست و اطلاعات API با رمزنگاری AES-256-GCM در مرورگر ذخیره شد.',
@@ -256,6 +257,7 @@ export const translations = {
     demoExplain:
       'Preloaded channels with per-message daily Views & Shares attribution, Public vs Private splits, and timing matrices.',
     vaultWrongPinError: 'Incorrect vault PIN. Please check your PIN and try again.',
+    vaultPinLockedError: 'Too many incorrect attempts. Please wait 30 seconds before trying again.',
     vaultPinRequiredError: 'Please enter your vault PIN to unlock.',
     vaultRevokedError: 'This saved session was revoked or expired on Telegram. Please sign in again.',
     vaultSavedSuccess: 'Session and API credentials encrypted (AES-256-GCM) and saved locally.',

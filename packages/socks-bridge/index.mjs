@@ -10,14 +10,12 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 
 const LISTEN_HOST = '127.0.0.1';
 const LISTEN_PORT = Number(process.env.PORT || 8787);
+const TELEGRAM_HOST_REGEX = /^(?:[a-zA-Z0-9-]+\.)?web\.telegram\.org$/;
 
 function isAllowedTelegramUrl(rawUrl) {
   try {
     const parsed = new URL(rawUrl);
-    return (
-      parsed.protocol === 'wss:' &&
-      (parsed.hostname === 'web.telegram.org' || parsed.hostname.endsWith('.web.telegram.org'))
-    );
+    return parsed.protocol === 'wss:' && TELEGRAM_HOST_REGEX.test(parsed.hostname);
   } catch {
     return false;
   }
@@ -72,7 +70,14 @@ wss.on('connection', (clientWs) => {
         s.username && s.password
           ? `${encodeURIComponent(s.username)}:${encodeURIComponent(s.password)}@`
           : '';
-      const proxyUri = `socks5h://${auth}${s.host}:${Number(s.port)}`;
+      const safeHost = String(s.host).trim().replace(/[^a-zA-Z0-9.-]/g, '');
+      const safePort = Math.min(65535, Math.max(1, Number(s.port) || 1080));
+      if (!safeHost) {
+        clientWs.send(JSON.stringify({ type: 'error', error: 'Invalid SOCKS5 host' }));
+        clientWs.close(1008);
+        return;
+      }
+      const proxyUri = `socks5h://${auth}${safeHost}:${safePort}`;
       const agent = new SocksProxyAgent(proxyUri);
 
       upstreamWs = new WebSocket(msg.targetUrl, 'binary', { agent });
