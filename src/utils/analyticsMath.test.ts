@@ -270,3 +270,98 @@ test('media formatters and getPostDisplayTitle handle captionless audio and poll
   assert.equal(getPostDisplayTitle(posts[0], 'fa'), '0xAudio — Metamorphosis');
 });
 
+
+test('extractDailyActivityFromGraph aggregates hourly data points into single daily bucket', () => {
+  const hourlyGraph: ParsedStatsGraph = {
+    id: 'post-hourly',
+    title: 'Interactions',
+    type: 'line',
+    timestamps: [
+      Date.UTC(2026, 10, 15, 1, 0), // 01:00 AM
+      Date.UTC(2026, 10, 15, 2, 0), // 02:00 AM
+      Date.UTC(2026, 10, 15, 3, 0), // 03:00 AM
+      Date.UTC(2026, 10, 16, 1, 0), // Next day
+    ],
+    series: [
+      { key: 'y0', label: 'Views', color: '#3390ec', values: [1, 5, 20, 10] },
+      { key: 'y1', label: 'Shares', color: '#f5a623', values: [0, 1, 2, 3] },
+    ],
+  };
+
+  const daily = extractDailyActivityFromGraph(hourlyGraph);
+  assert.equal(daily.length, 2);
+  // Nov 15 must be 1 + 5 + 20 = 26 views, 0 + 1 + 2 = 3 shares (not truncated to 1 view)
+  assert.deepEqual(daily[0], { dateKey: '2026-11-15', views: 26, shares: 3 });
+  assert.deepEqual(daily[1], { dateKey: '2026-11-16', views: 10, shares: 3 });
+});
+
+test('extractDailyActivityFromGraph detects cumulative running totals and computes daily deltas', () => {
+  const cumulativeGraph: ParsedStatsGraph = {
+    id: 'post-cumulative',
+    title: 'Interactions',
+    type: 'line',
+    timestamps: [
+      Date.UTC(2026, 10, 14),
+      Date.UTC(2026, 10, 15),
+      Date.UTC(2026, 10, 16),
+      Date.UTC(2026, 10, 17),
+    ],
+    series: [
+      { key: 'y0', label: 'Views', color: '#3390ec', values: [100, 140, 190, 250] },
+    ],
+  };
+
+  const daily = extractDailyActivityFromGraph(cumulativeGraph);
+  assert.equal(daily.length, 4);
+  assert.equal(daily[0].views, 100);
+  assert.equal(daily[1].views, 40); // 140 - 100
+  assert.equal(daily[2].views, 50); // 190 - 140
+  assert.equal(daily[3].views, 60); // 250 - 190
+});
+
+test('attributeDateFromMessageStats automatically attributes posts published on the selected date', () => {
+  const posts = groupAlbumPosts(
+    [
+      {
+        id: 301,
+        date: Date.UTC(2026, 10, 15, 10, 30),
+        text: 'Published on date',
+        views: 85,
+        forwards: 7,
+        replies: 0,
+        groupedId: null,
+        mediaKind: 'text',
+        reactions: [],
+      },
+    ],
+    new Set([301]),
+  );
+
+  const interactionsGraph: ParsedStatsGraph = {
+    id: 'interactions',
+    title: 'Interactions',
+    type: 'line',
+    timestamps: [Date.UTC(2026, 10, 15)],
+    series: [
+      { key: 'y0', label: 'Views', color: '#3390ec', values: [100] },
+      { key: 'y1', label: 'Shares', color: '#f5a623', values: [10] },
+    ],
+  };
+
+  // No stats pre-loaded for post 301 in postStatsByPost
+  const attribution = attributeDateFromMessageStats({
+    dateKey: '2026-11-15',
+    interactionsGraph,
+    posts,
+    postStatsByPost: {},
+    dailyDeltas: [],
+    publicForwardsByPost: {},
+  });
+
+  assert.equal(attribution.contributions.length, 1);
+  assert.equal(attribution.contributions[0].post.primaryId, 301);
+  assert.equal(attribution.contributions[0].viewsOnDate, 85);
+  assert.equal(attribution.contributions[0].sharesOnDate, 7);
+  assert.equal(attribution.attributedViewsSum, 85);
+  assert.equal(attribution.attributedSharesSum, 7);
+});

@@ -38,13 +38,43 @@ export const AudienceTab: React.FC<AudienceTabProps> = React.memo(({ lang, bundl
   const langSlices = useMemo(() => {
     const g = overview.languagesGraph;
     if (!g || g.series.length === 0) return [];
-    const total = g.series.reduce((sum, s) => sum + (s.values[0] ?? 0), 0) || 1;
-    return g.series.map((s) => ({
+
+    // Sum across all time points for each language series (Telegram contest specification for distribution)
+    const seriesTotals = g.series.map((s) => ({
       label: s.label,
       color: s.color,
-      value: s.values[0] ?? 0,
-      pct: Math.round(((s.values[0] ?? 0) / total) * 100),
+      value: s.values.reduce((acc, v) => acc + (v || 0), 0),
     }));
+
+    const total = seriesTotals.reduce((acc, s) => acc + s.value, 0);
+
+    // If total sum is 0 (or no data), fallback to the latest available timestamp
+    if (total <= 0) {
+      const lastIdx = Math.max(0, (g.timestamps.length || 1) - 1);
+      const fallback = g.series.map((s) => ({
+        label: s.label,
+        color: s.color,
+        value: s.values[lastIdx] ?? 0,
+      }));
+      const fbTotal = fallback.reduce((acc, s) => acc + s.value, 0) || 1;
+      return fallback
+        .map((s) => {
+          const rawPct = (s.value / fbTotal) * 100;
+          const pct = rawPct >= 10 ? Math.round(rawPct) : Number(rawPct.toFixed(1));
+          return { ...s, pct };
+        })
+        .filter((s) => s.value > 0 || fallback.length <= 4)
+        .sort((a, b) => b.pct - a.pct || b.value - a.value);
+    }
+
+    return seriesTotals
+      .map((s) => {
+        const rawPct = (s.value / total) * 100;
+        const pct = rawPct >= 10 ? Math.round(rawPct) : Number(rawPct.toFixed(1));
+        return { ...s, pct };
+      })
+      .filter((s) => s.value > 0)
+      .sort((a, b) => b.pct - a.pct || b.value - a.value);
   }, [overview.languagesGraph]);
 
   const weekdayLabels = lang === 'fa' ? WEEKDAYS_FA : WEEKDAYS_EN;

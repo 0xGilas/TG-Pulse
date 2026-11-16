@@ -1140,7 +1140,6 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
       const maxPosts = Math.min(60, cmd.maxPosts ?? 40);
       const candidates = [...cmd.posts]
         .filter((p) => p.forwards > 0 || p.views > 0)
-        .sort((a, b) => b.forwards - a.forwards || b.date - a.date)
         .slice(0, maxPosts);
 
       const results: AttributionScanItemResult[] = [];

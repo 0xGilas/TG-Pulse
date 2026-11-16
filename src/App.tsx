@@ -802,6 +802,10 @@ export function App() {
     setAttributionProgress(null);
     setLiveError(null);
     try {
+      const selectedTs = selectedDateKey
+        ? new Date(`${selectedDateKey}T23:59:59Z`).getTime()
+        : 0;
+
       const candidates = activeBundle.posts
         .filter((p) => !activeBundle.postStatsByPost[p.key] && (p.forwards > 0 || p.views > 0))
         .map((p) => ({
@@ -811,6 +815,32 @@ export function App() {
           forwards: p.forwards,
           views: p.views,
         }));
+
+      if (selectedTs > 0) {
+        // Prioritize posts published on or near the selected date
+        candidates.sort((a, b) => {
+          // If post is published after selectedDateKey (+ 1 day tolerance for timezone), deprioritize
+          const aFuture = a.date > selectedTs + 86400_000;
+          const bFuture = b.date > selectedTs + 86400_000;
+          if (aFuture && !bFuture) return 1;
+          if (!aFuture && bFuture) return -1;
+
+          // Distance in time from the selected date (closer is higher priority)
+          const aDist = Math.abs(selectedTs - a.date);
+          const bDist = Math.abs(selectedTs - b.date);
+
+          // Posts within 14 days get first priority, sorted by proximity then views/shares
+          const aRecent = aDist <= 14 * 86400_000;
+          const bRecent = bDist <= 14 * 86400_000;
+          if (aRecent && !bRecent) return -1;
+          if (!aRecent && bRecent) return 1;
+
+          return aDist - bDist || b.forwards - a.forwards || b.views - a.views;
+        });
+      } else {
+        // No date selected: prioritize recent active posts
+        candidates.sort((a, b) => b.date - a.date || b.forwards - a.forwards);
+      }
 
       const results = await telegramBridge.scanDateAttribution(
         activeBundle.channel.id,
@@ -880,7 +910,7 @@ export function App() {
       setScanningAttribution(false);
       setAttributionProgress(null);
     }
-  }, [activeBundle, isSampleMode, scanningAttribution]);
+  }, [activeBundle, isSampleMode, scanningAttribution, selectedDateKey]);
 
   const handleCaptureSnapshot = useCallback(async () => {
     if (!activeBundle) return;

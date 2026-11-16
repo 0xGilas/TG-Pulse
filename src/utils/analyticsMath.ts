@@ -36,12 +36,51 @@ export function extractDailyActivityFromGraph(graph?: ParsedStatsGraph): Message
   if (!graph || graph.timestamps.length === 0) return [];
   const viewsSeries =
     graph.series.find((s) => /view/i.test(s.label) || s.key === 'y0') ?? graph.series[0];
-  const sharesSeries = graph.series.find((s) => /share|forward/i.test(s.label) || s.key === 'y1');
+  const sharesSeries =
+    graph.series.find((s) => /share|forward/i.test(s.label) || s.key === 'y1') ??
+    (graph.series.length > 1 ? graph.series[1] : undefined);
 
-  return graph.timestamps.map((ts, idx) => ({
-    dateKey: formatDateKey(ts),
-    views: Math.max(0, viewsSeries?.values[idx] ?? 0),
-    shares: Math.max(0, sharesSeries?.values[idx] ?? 0),
+  const rawViews = viewsSeries?.values ?? [];
+  const rawShares = sharesSeries?.values ?? [];
+
+  // Detect whether views are cumulative (running total that never decreases)
+  let isCumulative = false;
+  if (rawViews.length >= 3) {
+    let nonDecreasingCount = 0;
+    for (let i = 1; i < rawViews.length; i += 1) {
+      if (rawViews[i] >= rawViews[i - 1]) nonDecreasingCount += 1;
+    }
+    if (nonDecreasingCount >= (rawViews.length - 1) * 0.95 && rawViews[rawViews.length - 1] > 0) {
+      isCumulative = true;
+    }
+  }
+
+  const dailyMap = new Map<string, { views: number; shares: number }>();
+
+  for (let i = 0; i < graph.timestamps.length; i += 1) {
+    const ts = graph.timestamps[i];
+    const dateKey = formatDateKey(ts);
+
+    let v = Math.max(0, rawViews[i] ?? 0);
+    if (isCumulative) {
+      const prev = i > 0 ? Math.max(0, rawViews[i - 1] ?? 0) : 0;
+      v = Math.max(0, v - prev);
+    }
+    const s = Math.max(0, rawShares[i] ?? 0);
+
+    const existing = dailyMap.get(dateKey);
+    if (existing) {
+      existing.views += v;
+      existing.shares += s;
+    } else {
+      dailyMap.set(dateKey, { views: v, shares: s });
+    }
+  }
+
+  return Array.from(dailyMap.entries()).map(([dateKey, stats]) => ({
+    dateKey,
+    views: stats.views,
+    shares: stats.shares,
   }));
 }
 
@@ -314,24 +353,30 @@ export function attributeDateFromMessageStats(params: {
     }
   }
 
-  // 2) Secondary source: local snapshot deltas for any post not already covered by message_stats
+  // 2) Secondary source: local snapshot deltas for any post
   const postByKey = new Map(posts.map((p) => [p.key, p]));
   for (const d of dailyDeltas) {
     if (d.dateKey !== dateKey) continue;
-    if (contributionMap.has(d.postKey)) continue;
     const post = postByKey.get(d.postKey);
-    if (!post || (d.deltaShares <= 0 && d.deltaViews <= 0)) continue;
-    contributionMap.set(d.postKey, {
-      post,
-      viewsOnDate: d.deltaViews,
-      sharesOnDate: d.deltaShares,
-      shareContributionPct: 0,
-      viewContributionPct: 0,
-      source: 'snapshot_delta',
-    });
+    if (!post) continue;
+    const existing = contributionMap.get(d.postKey);
+    if (existing) {
+      if (existing.viewsOnDate === 0 && d.deltaViews > 0) existing.viewsOnDate = d.deltaViews;
+      if (existing.sharesOnDate === 0 && d.deltaShares > 0) existing.sharesOnDate = d.deltaShares;
+    } else {
+      if (d.deltaShares <= 0 && d.deltaViews <= 0) continue;
+      contributionMap.set(d.postKey, {
+        post,
+        viewsOnDate: Math.max(0, d.deltaViews),
+        sharesOnDate: Math.max(0, d.deltaShares),
+        shareContributionPct: 0,
+        viewContributionPct: 0,
+        source: 'snapshot_delta',
+      });
+    }
   }
 
-  // 3) Public channel forwards on this date
+  // 3) Public channel forwards on this date (always increment shares even if post exists)
   const publicForwardsOnDate: Array<{ post: PostRecord; forward: PublicForwardRecord }> = [];
   for (const [postKey, forwards] of Object.entries(publicForwardsByPost)) {
     const post = postByKey.get(postKey);
@@ -339,7 +384,10 @@ export function attributeDateFromMessageStats(params: {
     for (const fwd of forwards) {
       if (formatDateKey(fwd.date) === dateKey) {
         publicForwardsOnDate.push({ post, forward: fwd });
-        if (!contributionMap.has(postKey)) {
+        const existing = contributionMap.get(postKey);
+        if (existing) {
+          existing.sharesOnDate += 1;
+        } else {
           contributionMap.set(postKey, {
             post,
             viewsOnDate: 0,
@@ -348,6 +396,32 @@ export function attributeDateFromMessageStats(params: {
             viewContributionPct: 0,
             source: 'public_forward',
           });
+        }
+      }
+    }
+  }
+
+  // 4) Direct publication attribution: Any post published ON this date
+  for (const post of posts) {
+    if (formatDateKey(post.date) === dateKey) {
+      const existing = contributionMap.get(post.key);
+      if (!existing) {
+        if (post.views > 0 || post.forwards > 0) {
+          contributionMap.set(post.key, {
+            post,
+            viewsOnDate: post.views,
+            sharesOnDate: post.forwards,
+            shareContributionPct: 0,
+            viewContributionPct: 0,
+            source: 'message_stats',
+          });
+        }
+      } else {
+        if (existing.viewsOnDate === 0 && post.views > 0) {
+          existing.viewsOnDate = post.views;
+        }
+        if (existing.sharesOnDate === 0 && post.forwards > 0) {
+          existing.sharesOnDate = post.forwards;
         }
       }
     }
@@ -414,7 +488,7 @@ export function computeChannelBenchmarks(posts: PostRecord[]): ChannelBenchmarks
   const totalPublicShares = posts.reduce((s, p) => s + p.publicSharesCount, 0);
   const totalPrivateShares = Math.max(0, totalShares - totalPublicShares);
 
-  const latestDate = Math.max(...posts.map((p) => p.date));
+  const latestDate = posts.reduce((max, p) => (p.date > max ? p.date : max), 0);
   const olderShares = posts
     .filter((p) => latestDate - p.date > 7 * 86400_000)
     .reduce((s, p) => s + p.forwards, 0);
