@@ -482,7 +482,7 @@ export function App() {
     return credsToCheck;
   };
 
-  const handleStartQr = async () => {
+  const handleStartQr = useCallback(async () => {
     const creds = validateApiCreds();
     if (!creds) return;
     setAuthError(null);
@@ -501,9 +501,9 @@ export function App() {
           : rawMsg
       );
     }
-  };
+  }, [lang, network]);
 
-  const handleSendCode = async (phone: string) => {
+  const handleSendCode = useCallback(async (phone: string) => {
     const creds = validateApiCreds();
     if (!creds) return;
     setAuthError(null);
@@ -528,9 +528,9 @@ export function App() {
           : rawMsg
       );
     }
-  };
+  }, [handleAuthorized, lang, network]);
 
-  const handleVerifyCode = async (code: string) => {
+  const handleVerifyCode = useCallback(async (code: string) => {
     setAuthError(null);
     try {
       const res = await telegramBridge.signIn(
@@ -544,16 +544,16 @@ export function App() {
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Invalid confirmation code');
     }
-  };
+  }, [phoneState.phone, phoneState.phoneCodeHash]);
 
-  const handleCheckPassword = async (password: string) => {
+  const handleCheckPassword = useCallback(async (password: string) => {
     setAuthError(null);
     try {
       await telegramBridge.checkPassword(password);
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Invalid 2FA password');
     }
-  };
+  }, []);
 
   const handleUnlockSavedSession = async (pin?: string) => {
     setAuthError(null);
@@ -643,12 +643,12 @@ export function App() {
     setSavedSessionMeta({ exists: true, hasPin: meta.hasPin });
   };
 
-  const handleDiscardSavedSession = async () => {
+  const handleDiscardSavedSession = useCallback(async () => {
     await clearSavedSession();
     setSavedSessionMeta({ exists: false, hasPin: false });
-  };
+  }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     if (!isSampleMode) {
       await telegramBridge.logoutAndTerminate();
       await clearSavedSession();
@@ -665,7 +665,7 @@ export function App() {
     setQrUrl(null);
     setAuthStep('idle');
     setAuthError(null);
-  };
+  }, [isSampleMode]);
 
   const activeBundle = activeChannelId ? bundlesByChannel[activeChannelId] ?? null : null;
 
@@ -727,19 +727,22 @@ export function App() {
     startTransition(() => setSelectedDateKey(dk));
   }, []);
 
-  const handleSelectChannel = async (channelId: number) => {
-    startTransition(() => {
-      setActiveChannelId(channelId);
-      setSelectedPostKey(null);
-      const existing = bundlesByChannel[channelId];
-      if (existing) {
-        setSelectedDateKey(pickDefaultDateKey(existing.overview.interactionsGraph));
+  const handleSelectChannel = useCallback(
+    async (channelId: number) => {
+      startTransition(() => {
+        setActiveChannelId(channelId);
+        setSelectedPostKey(null);
+        const existing = bundlesByChannel[channelId];
+        if (existing) {
+          setSelectedDateKey(pickDefaultDateKey(existing.overview.interactionsGraph));
+        }
+      });
+      if (!bundlesByChannel[channelId] && !isSampleMode) {
+        await loadLiveChannelBundle(channelId);
       }
-    });
-    if (!bundlesByChannel[channelId] && !isSampleMode) {
-      await loadLiveChannelBundle(channelId);
-    }
-  };
+    },
+    [bundlesByChannel, isSampleMode, loadLiveChannelBundle],
+  );
 
   const handleLoadLivePostDetails = useCallback(async (post: PostRecord) => {
     if (!activeBundle || isSampleMode) return;
@@ -793,7 +796,7 @@ export function App() {
     }
   }, [activeBundle, isSampleMode]);
 
-  const handleScanDateAttribution = async () => {
+  const handleScanDateAttribution = useCallback(async () => {
     if (!activeBundle || isSampleMode || scanningAttribution) return;
     setScanningAttribution(true);
     setAttributionProgress(null);
@@ -877,9 +880,9 @@ export function App() {
       setScanningAttribution(false);
       setAttributionProgress(null);
     }
-  };
+  }, [activeBundle, isSampleMode, scanningAttribution]);
 
-  const handleCaptureSnapshot = async () => {
+  const handleCaptureSnapshot = useCallback(async () => {
     if (!activeBundle) return;
     const snap = buildSnapshotFromPosts(
       activeBundle.channel.id,
@@ -898,45 +901,48 @@ export function App() {
         lastSnapshotAt: snap.capturedAt,
       },
     }));
-  };
+  }, [activeBundle]);
 
-  const handleImportSnapshot = async (snapshot: ChannelSnapshot) => {
-    if (!activeBundle) return;
-    const recalculated = computeSnapshotDeltas(activeBundle.posts, snapshot);
-    const todayKey = formatDateKey(Date.now());
-    const extraDeltas: DailyDeltaRecord[] = recalculated
-      .filter((p) => p.deltaShares > 0)
-      .map((p) => ({
-        dateKey: todayKey,
-        postKey: p.key,
-        primaryId: p.primaryId,
-        deltaShares: p.deltaShares,
-        deltaViews: p.deltaViews,
-      }));
+  const handleImportSnapshot = useCallback(
+    async (snapshot: ChannelSnapshot) => {
+      if (!activeBundle) return;
+      const recalculated = computeSnapshotDeltas(activeBundle.posts, snapshot);
+      const todayKey = formatDateKey(Date.now());
+      const extraDeltas: DailyDeltaRecord[] = recalculated
+        .filter((p) => p.deltaShares > 0)
+        .map((p) => ({
+          dateKey: todayKey,
+          postKey: p.key,
+          primaryId: p.primaryId,
+          deltaShares: p.deltaShares,
+          deltaViews: p.deltaViews,
+        }));
 
-    const mergedDeltas = [...activeBundle.dailyDeltas, ...extraDeltas];
-    await saveChannelSnapshotHistory(activeBundle.channel.id, {
-      latestSnapshot: snapshot,
-      dailyDeltas: mergedDeltas,
-      postStatsByPost: activeBundle.postStatsByPost,
-    });
-    setBundlesByChannel((prev) => ({
-      ...prev,
-      [activeBundle.channel.id]: {
-        ...activeBundle,
-        posts: recalculated,
+      const mergedDeltas = [...activeBundle.dailyDeltas, ...extraDeltas];
+      await saveChannelSnapshotHistory(activeBundle.channel.id, {
+        latestSnapshot: snapshot,
         dailyDeltas: mergedDeltas,
-        lastSnapshotAt: snapshot.capturedAt,
-      },
-    }));
-  };
+        postStatsByPost: activeBundle.postStatsByPost,
+      });
+      setBundlesByChannel((prev) => ({
+        ...prev,
+        [activeBundle.channel.id]: {
+          ...activeBundle,
+          posts: recalculated,
+          dailyDeltas: mergedDeltas,
+          lastSnapshotAt: snapshot.capturedAt,
+        },
+      }));
+    },
+    [activeBundle],
+  );
 
-  const handleWipeVault = async () => {
+  const handleWipeVault = useCallback(async () => {
     await wipeAllVaultData();
     setSavedSessionMeta({ exists: false, hasPin: false });
     setPersistenceMode('ephemeral');
     setVaultPin('');
-  };
+  }, []);
 
   if (authStep !== 'authorized') {
     return (

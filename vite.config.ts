@@ -1,15 +1,17 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
+  const rootDir = typeof import.meta.dirname === 'string' ? import.meta.dirname : process.cwd();
+
   return {
     base: './',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(rootDir, '.'),
       },
     },
     optimizeDeps: {
@@ -27,6 +29,9 @@ export default defineConfig(() => {
             }
             if (id.includes('/node_modules/lucide-react/')) {
               return 'ui-icons';
+            }
+            if (id.includes('/node_modules/qrcode/')) {
+              return 'qrcode-vendor';
             }
             return undefined;
           },

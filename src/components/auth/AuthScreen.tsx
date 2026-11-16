@@ -84,7 +84,7 @@ const PREVIEW_DAYS = [
   },
 ] as const;
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({
+export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
   lang,
   onToggleLang,
   network,
@@ -773,4 +773,4 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       </main>
     </div>
   );
-};
+});

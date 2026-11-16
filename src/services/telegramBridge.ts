@@ -34,6 +34,8 @@ class TelegramWorkerBridge {
   >();
   private listeners: BridgeListeners = {};
   private reqCounter = 0;
+  private lastAttributionDispatch = 0;
+  private pendingAttributionTimer: ReturnType<typeof setTimeout> | null = null;
 
   setListeners(listeners: BridgeListeners) {
     this.listeners = listeners;
@@ -71,7 +73,34 @@ class TelegramWorkerBridge {
         this.listeners.onScanProgress?.(msg.channelId, msg.scannedCount);
       }
       if (msg.type === 'attribution_progress') {
-        this.listeners.onAttributionProgress?.(msg.channelId, msg.completed, msg.total);
+        const isFinal = msg.completed >= msg.total;
+        if (isFinal) {
+          if (this.pendingAttributionTimer) {
+            clearTimeout(this.pendingAttributionTimer);
+            this.pendingAttributionTimer = null;
+          }
+          this.lastAttributionDispatch = Date.now();
+          this.listeners.onAttributionProgress?.(msg.channelId, msg.completed, msg.total);
+        } else {
+          const now = Date.now();
+          if (now - this.lastAttributionDispatch >= 120) {
+            if (this.pendingAttributionTimer) {
+              clearTimeout(this.pendingAttributionTimer);
+              this.pendingAttributionTimer = null;
+            }
+            this.lastAttributionDispatch = now;
+            this.listeners.onAttributionProgress?.(msg.channelId, msg.completed, msg.total);
+          } else if (!this.pendingAttributionTimer) {
+            const chId = msg.channelId;
+            const comp = msg.completed;
+            const tot = msg.total;
+            this.pendingAttributionTimer = setTimeout(() => {
+              this.pendingAttributionTimer = null;
+              this.lastAttributionDispatch = Date.now();
+              this.listeners.onAttributionProgress?.(chId, comp, tot);
+            }, 120);
+          }
+        }
       }
       if (msg.type === 'channel_avatars_updated') {
         this.listeners.onChannelAvatarsUpdated?.(msg.avatars);
@@ -146,6 +175,10 @@ class TelegramWorkerBridge {
   }
 
   async logoutAndTerminate() {
+    if (this.pendingAttributionTimer) {
+      clearTimeout(this.pendingAttributionTimer);
+      this.pendingAttributionTimer = null;
+    }
     if (!this.worker) return;
     try {
       await this.invoke<{ loggedOut: boolean }>({ type: 'logout' });
