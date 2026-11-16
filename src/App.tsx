@@ -753,6 +753,7 @@ export function App() {
         post.primaryId,
         activeBundle.channel.statsDc,
         post.key,
+        post.date,
       );
       const evergreen = computeEvergreenRatio(post.date, details.dailyBreakdown);
       const pubCount = Math.min(

@@ -32,7 +32,10 @@ export function formatDateKey(unixMs: number): string {
 /**
  * Extracts exact daily Views & Shares rows from a message's `stats.getMessageStats` graph.
  */
-export function extractDailyActivityFromGraph(graph?: ParsedStatsGraph): MessageDailyActivity[] {
+export function extractDailyActivityFromGraph(
+  graph?: ParsedStatsGraph,
+  postDateMs?: number,
+): MessageDailyActivity[] {
   if (!graph || graph.timestamps.length === 0) return [];
   const viewsSeries =
     graph.series.find((s) => /view/i.test(s.label) || s.key === 'y0') ?? graph.series[0];
@@ -43,9 +46,13 @@ export function extractDailyActivityFromGraph(graph?: ParsedStatsGraph): Message
   const rawViews = viewsSeries?.values ?? [];
   const rawShares = sharesSeries?.values ?? [];
 
+  const firstGraphDateKey = formatDateKey(graph.timestamps[0]);
+  const postPublishedBeforeFirstGraphPoint =
+    typeof postDateMs === 'number' && formatDateKey(postDateMs) < firstGraphDateKey;
+
   // Detect whether views are cumulative (running total that never decreases)
   let isCumulative = false;
-  if (rawViews.length >= 3) {
+  if (rawViews.length >= 2) {
     let nonDecreasingCount = 0;
     for (let i = 1; i < rawViews.length; i += 1) {
       if (rawViews[i] >= rawViews[i - 1]) nonDecreasingCount += 1;
@@ -53,6 +60,8 @@ export function extractDailyActivityFromGraph(graph?: ParsedStatsGraph): Message
     if (nonDecreasingCount >= (rawViews.length - 1) * 0.95 && rawViews[rawViews.length - 1] > 0) {
       isCumulative = true;
     }
+  } else if (rawViews.length === 1 && postPublishedBeforeFirstGraphPoint) {
+    isCumulative = true;
   }
 
   const dailyMap = new Map<string, { views: number; shares: number }>();
@@ -63,8 +72,13 @@ export function extractDailyActivityFromGraph(graph?: ParsedStatsGraph): Message
 
     let v = Math.max(0, rawViews[i] ?? 0);
     if (isCumulative) {
-      const prev = i > 0 ? Math.max(0, rawViews[i - 1] ?? 0) : 0;
-      v = Math.max(0, v - prev);
+      if (i === 0) {
+        // If the post was published BEFORE the graph starts, index 0 is baseline carryover from prior days!
+        v = postPublishedBeforeFirstGraphPoint ? 0 : v;
+      } else {
+        const prev = Math.max(0, rawViews[i - 1] ?? 0);
+        v = Math.max(0, v - prev);
+      }
     }
     const s = Math.max(0, rawShares[i] ?? 0);
 
@@ -345,16 +359,23 @@ export function attributeDateFromMessageStats(params: {
     const detailed = postStatsByPost[post.key];
     if (!detailed) continue;
     const dayRow = detailed.dailyBreakdown.find((d) => d.dateKey === dateKey);
-    if (dayRow && (dayRow.views > 0 || dayRow.shares > 0)) {
-      contributionMap.set(post.key, {
-        post,
-        viewsOnDate: dayRow.views,
-        sharesOnDate: dayRow.shares,
-        shareContributionPct: 0,
-        viewContributionPct: 0,
-        source: 'message_stats',
-      });
+    if (!dayRow || (dayRow.views <= 0 && dayRow.shares <= 0)) continue;
+
+    // Safety check: If an older post (published days before dateKey) has 0 shares and
+    // its views on dateKey equals its all-time post.views, that was a cumulative baseline artifact!
+    const isOldPost = formatDateKey(post.date) < dateKey;
+    if (isOldPost && dayRow.shares === 0 && dayRow.views >= post.views && post.views > 0) {
+      continue;
     }
+
+    contributionMap.set(post.key, {
+      post,
+      viewsOnDate: dayRow.views,
+      sharesOnDate: dayRow.shares,
+      shareContributionPct: 0,
+      viewContributionPct: 0,
+      source: 'message_stats',
+    });
   }
 
   // 2) Secondary source: local snapshot deltas for any post

@@ -70,6 +70,7 @@ export type WorkerCommand =
       postId: number;
       postKey?: string;
       statsDc?: number;
+      postDate?: number;
     }
   | {
       id: string;
@@ -487,6 +488,7 @@ async function fetchSinglePostStats(
   postId: number,
   postKey: string,
   statsDc?: number,
+  postDateMs?: number,
 ): Promise<PostDetailedStats> {
   let viewsGraph: ParsedStatsGraph | undefined;
   let reactionsGraph: ParsedStatsGraph | undefined;
@@ -523,7 +525,7 @@ async function fetchSinglePostStats(
     // Post may not have detailed message graph (e.g. small channel)
   }
 
-  const dailyBreakdown = extractDailyActivityFromGraph(viewsGraph);
+  const dailyBreakdown = extractDailyActivityFromGraph(viewsGraph, postDateMs);
 
   const publicForwards: PublicForwardRecord[] = [];
   let publicSharesTotal = 0;
@@ -1114,6 +1116,7 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
         cmd.postId,
         cmd.postKey ?? `msg:${cmd.postId}`,
         cmd.statsDc,
+        cmd.postDate,
       );
     }
 
@@ -1153,6 +1156,7 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
             candidate.primaryId,
             candidate.key,
             cmd.statsDc,
+            candidate.date,
           );
           const evergreenRatio = computeEvergreenRatio(candidate.date, details.dailyBreakdown);
           results.push({ postKey: candidate.key, details, evergreenRatio });

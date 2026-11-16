@@ -486,3 +486,31 @@ test('attributeDateFromMessageStats attributes latest post #1406 in recent launc
   const oldPostContrib = attribution.contributions.find((c) => c.post.primaryId === 1342);
   assert.equal(oldPostContrib?.sharesOnDate ?? 0, 0);
 });
+
+test('extractDailyActivityFromGraph treats index 0 as carryover baseline for posts published prior to graph start', () => {
+  const viewsGraph: ParsedStatsGraph = {
+    id: 'post-1405-views',
+    title: 'Interactions',
+    type: 'line',
+    timestamps: [
+      Date.UTC(2026, 10, 15, 0, 0), // Nov 15 (graph starts here)
+      Date.UTC(2026, 10, 16, 0, 0), // Nov 16
+    ],
+    series: [
+      { key: 'y0', label: 'Views', color: '#3390ec', values: [5, 5] },
+    ],
+  };
+
+  // Post was published on Nov 10 (before graph start)
+  const postDateNov10 = Date.UTC(2026, 10, 10, 12, 0);
+  const dailyOld = extractDailyActivityFromGraph(viewsGraph, postDateNov10);
+
+  // Index 0 (Nov 15) must be 0 views (not 5!), because those 5 views happened on Nov 10!
+  assert.equal(dailyOld.find((d) => d.dateKey === '2026-11-15')?.views, 0);
+  assert.equal(dailyOld.find((d) => d.dateKey === '2026-11-16')?.views, 0);
+
+  // Conversely, if post was published ON Nov 15, index 0 is valid publication views
+  const postDateNov15 = Date.UTC(2026, 10, 15, 2, 0);
+  const dailyNew = extractDailyActivityFromGraph(viewsGraph, postDateNov15);
+  assert.equal(dailyNew.find((d) => d.dateKey === '2026-11-15')?.views, 5);
+});

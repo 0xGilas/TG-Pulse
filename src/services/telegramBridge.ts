@@ -201,13 +201,20 @@ class TelegramWorkerBridge {
     }>({ type: 'fetch_channel_analytics', channelId, maxMessages });
   }
 
-  fetchPostDetails(channelId: number, postId: number, statsDc?: number, postKey?: string) {
+  fetchPostDetails(
+    channelId: number,
+    postId: number,
+    statsDc?: number,
+    postKey?: string,
+    postDate?: number,
+  ) {
     return this.invoke<PostDetailedStats>({
       type: 'fetch_post_details',
       channelId,
       postId,
       postKey,
       statsDc,
+      postDate,
     });
   }
 
