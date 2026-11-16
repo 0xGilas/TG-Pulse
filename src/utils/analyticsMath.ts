@@ -358,14 +358,20 @@ export function attributeDateFromMessageStats(params: {
   for (const post of posts) {
     const detailed = postStatsByPost[post.key];
     if (!detailed) continue;
-    const dayRow = detailed.dailyBreakdown.find((d) => d.dateKey === dateKey);
+    const dailyBreakdown = detailed.viewsGraph
+      ? extractDailyActivityFromGraph(detailed.viewsGraph, post.date)
+      : detailed.dailyBreakdown;
+    const dayRow = dailyBreakdown.find((d) => d.dateKey === dateKey);
     if (!dayRow || (dayRow.views <= 0 && dayRow.shares <= 0)) continue;
 
-    // Safety check: If an older post (published days before dateKey) has 0 shares and
-    // its views on dateKey equals its all-time post.views, that was a cumulative baseline artifact!
+    // Safety check: For any older post (published before dateKey), if it has 0 shares on this date,
+    // discard baseline carryover from index 0 of the graph (e.g. all-time cumulative views at start of stats window)
     const isOldPost = formatDateKey(post.date) < dateKey;
-    if (isOldPost && dayRow.shares === 0 && dayRow.views >= post.views && post.views > 0) {
-      continue;
+    if (isOldPost && dayRow.shares === 0) {
+      const isFirstBreakdownDay = dailyBreakdown[0]?.dateKey === dateKey;
+      if (isFirstBreakdownDay || dayRow.views >= post.views) {
+        continue;
+      }
     }
 
     contributionMap.set(post.key, {

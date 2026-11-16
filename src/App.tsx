@@ -12,6 +12,7 @@ import type {
   ParsedStatsGraph,
   PostMediaPreview,
   PostRecord,
+  PostDetailedStats,
   SessionPersistenceMode,
 } from './types/analytics';
 import { getTranslations } from './i18n/translations';
@@ -19,6 +20,7 @@ import {
   buildSnapshotFromPosts,
   computeEvergreenRatio,
   computeSnapshotDeltas,
+  extractDailyActivityFromGraph,
   formatDateKey,
   groupAlbumPosts,
 } from './utils/analyticsMath';
@@ -274,7 +276,19 @@ export function App() {
 
       const history = await loadChannelSnapshotHistory(channelId);
       const prevSnapshot = history?.latestSnapshot ?? null;
-      const cachedPostStats = history?.postStatsByPost ?? {};
+      const rawCachedPostStats = history?.postStatsByPost ?? {};
+      const cachedPostStats: Record<string, PostDetailedStats> = {};
+      for (const [key, detailed] of Object.entries(rawCachedPostStats)) {
+        const post = grouped.find((p) => p.key === key);
+        if (post && detailed.viewsGraph) {
+          cachedPostStats[key] = {
+            ...detailed,
+            dailyBreakdown: extractDailyActivityFromGraph(detailed.viewsGraph, post.date),
+          };
+        } else {
+          cachedPostStats[key] = detailed;
+        }
+      }
       const postsWithDeltas = computeSnapshotDeltas(grouped, prevSnapshot).map((p) => {
         const cached = cachedPostStats[p.key];
         if (!cached) return p;

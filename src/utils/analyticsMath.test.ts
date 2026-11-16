@@ -23,6 +23,7 @@ import type {
   DailyDeltaRecord,
   ParsedStatsGraph,
   PostDetailedStats,
+  PostRecord,
   RawChannelMessage,
 } from '../types/analytics';
 
@@ -513,4 +514,134 @@ test('extractDailyActivityFromGraph treats index 0 as carryover baseline for pos
   const postDateNov15 = Date.UTC(2026, 10, 15, 2, 0);
   const dailyNew = extractDailyActivityFromGraph(viewsGraph, postDateNov15);
   assert.equal(dailyNew.find((d) => d.dateKey === '2026-11-15')?.views, 5);
+});
+
+test('attributeDateFromMessageStats discards index 0 baseline carryover for older posts with 0 shares', () => {
+  const post1405: PostRecord = {
+    key: 'msg:1405',
+    primaryId: 1405,
+    messageIds: [1405],
+    groupedId: null,
+    isAlbum: false,
+    albumChildren: [],
+    date: Date.parse('2026-11-10T12:00:00Z'),
+    text: 'Older post with 0 shares',
+    mediaKind: 'text',
+    views: 6, // lifetime views grew to 6
+    forwards: 0,
+    albumTotalItemForwards: 0,
+    publicSharesCount: 0,
+    privateSharesCount: 0,
+    replies: 0,
+    reactionsCount: 0,
+    reactions: [],
+    shareRatePercent: 0,
+    engagementRatePercent: 0,
+    deltaViews: 0,
+    deltaShares: 0,
+    deltaReactions: 0,
+    evergreenShareRatio: 0,
+    inRecentWindow: true,
+  };
+
+  const post1342: PostRecord = {
+    key: 'msg:1342',
+    primaryId: 1342,
+    messageIds: [1342],
+    groupedId: null,
+    isAlbum: false,
+    albumChildren: [],
+    date: Date.parse('2026-04-18T12:00:00Z'),
+    text: 'Evergreen post shared on Nov 15',
+    mediaKind: 'text',
+    views: 120,
+    forwards: 15,
+    albumTotalItemForwards: 15,
+    publicSharesCount: 0,
+    privateSharesCount: 15,
+    replies: 0,
+    reactionsCount: 0,
+    reactions: [],
+    shareRatePercent: 12.5,
+    engagementRatePercent: 12.5,
+    deltaViews: 0,
+    deltaShares: 0,
+    deltaReactions: 0,
+    evergreenShareRatio: 100,
+    inRecentWindow: false,
+  };
+
+  const post1406: PostRecord = {
+    key: 'msg:1406',
+    primaryId: 1406,
+    messageIds: [1406],
+    groupedId: null,
+    isAlbum: false,
+    albumChildren: [],
+    date: Date.parse('2026-11-15T02:00:00Z'),
+    text: 'Brand new post on Nov 15',
+    mediaKind: 'text',
+    views: 7,
+    forwards: 1,
+    albumTotalItemForwards: 1,
+    publicSharesCount: 0,
+    privateSharesCount: 1,
+    replies: 0,
+    reactionsCount: 0,
+    reactions: [],
+    shareRatePercent: 14,
+    engagementRatePercent: 14,
+    deltaViews: 0,
+    deltaShares: 0,
+    deltaReactions: 0,
+    evergreenShareRatio: 0,
+    inRecentWindow: true,
+  };
+
+  const postStatsByPost: Record<string, PostDetailedStats> = {
+    'msg:1405': {
+      postKey: 'msg:1405',
+      primaryId: 1405,
+      dailyBreakdown: [
+        { dateKey: '2026-11-15', views: 5, shares: 0 },
+      ],
+      publicForwards: [],
+      loadedAt: Date.now(),
+    },
+    'msg:1342': {
+      postKey: 'msg:1342',
+      primaryId: 1342,
+      dailyBreakdown: [
+        { dateKey: '2026-11-15', views: 1, shares: 2 },
+      ],
+      publicForwards: [],
+      loadedAt: Date.now(),
+    },
+    'msg:1406': {
+      postKey: 'msg:1406',
+      primaryId: 1406,
+      dailyBreakdown: [
+        { dateKey: '2026-11-15', views: 7, shares: 1 },
+      ],
+      publicForwards: [],
+      loadedAt: Date.now(),
+    },
+  };
+
+  const attribution = attributeDateFromMessageStats({
+    dateKey: '2026-11-15',
+    posts: [post1405, post1342, post1406],
+    postStatsByPost,
+    dailyDeltas: [],
+    publicForwardsByPost: {},
+  });
+
+  // Exactly 2 posts (#1342 and #1406) must be attributed; #1405 must be completely excluded!
+  assert.equal(attribution.contributions.length, 2);
+  assert.equal(attribution.contributions[0].post.primaryId, 1342);
+  assert.equal(attribution.contributions[0].sharesOnDate, 2);
+  assert.equal(attribution.contributions[1].post.primaryId, 1406);
+  assert.equal(attribution.contributions[1].sharesOnDate, 1);
+  assert.equal(attribution.attributedSharesSum, 3);
+  assert.equal(attribution.attributedViewsSum, 8);
 });
