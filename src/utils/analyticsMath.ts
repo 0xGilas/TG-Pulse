@@ -250,11 +250,15 @@ export function computeSnapshotDeltas(
   return posts.map((post) => {
     const prev = previousSnapshot.posts[post.key];
     if (!prev) {
+      // Only attribute lifetime numbers as deltas if this post was published AFTER the previous snapshot was taken.
+      // If the post was published BEFORE the previous snapshot, it is an older post not included in that snapshot;
+      // its historical views/shares did NOT occur in the current window!
+      const isNewPost = post.date >= previousSnapshot.capturedAt;
       return {
         ...post,
-        deltaViews: post.views,
-        deltaShares: post.forwards,
-        deltaReactions: post.reactionsCount,
+        deltaViews: isNewPost ? post.views : 0,
+        deltaShares: isNewPost ? post.forwards : 0,
+        deltaReactions: isNewPost ? post.reactionsCount : 0,
       };
     }
 
@@ -359,6 +363,14 @@ export function attributeDateFromMessageStats(params: {
     if (d.dateKey !== dateKey) continue;
     const post = postByKey.get(d.postKey);
     if (!post) continue;
+
+    // Discard corrupted historical deltas where an older post (published >48h before delta date)
+    // was attributed lifetime forwards due to a missing baseline in older versions
+    const deltaEndMs = Date.parse(`${d.dateKey}T23:59:59.999Z`);
+    if (deltaEndMs - post.date > 48 * 3600_000 && d.deltaShares >= post.forwards && post.forwards > 0) {
+      continue;
+    }
+
     const existing = contributionMap.get(d.postKey);
     if (existing) {
       if (existing.viewsOnDate === 0 && d.deltaViews > 0) existing.viewsOnDate = d.deltaViews;
@@ -401,9 +413,16 @@ export function attributeDateFromMessageStats(params: {
     }
   }
 
-  // 4) Direct publication attribution: Any post published ON this date
+  // 4) Direct publication attribution: Any post published ON or within timezone tolerance of this date
+  const selectedDayStart = Date.parse(`${dateKey}T00:00:00Z`);
+  const selectedDayEnd = Date.parse(`${dateKey}T23:59:59.999Z`);
+
   for (const post of posts) {
-    if (formatDateKey(post.date) === dateKey) {
+    const isExactDay = formatDateKey(post.date) === dateKey;
+    const isTimezoneMatch =
+      post.date >= selectedDayStart - 14 * 3600_000 && post.date <= selectedDayEnd + 14 * 3600_000;
+
+    if (isExactDay || isTimezoneMatch) {
       const existing = contributionMap.get(post.key);
       if (!existing) {
         if (post.views > 0 || post.forwards > 0) {
@@ -422,6 +441,35 @@ export function attributeDateFromMessageStats(params: {
         }
         if (existing.sharesOnDate === 0 && post.forwards > 0) {
           existing.sharesOnDate = post.forwards;
+        }
+      }
+    }
+  }
+
+  // 5) Recent active launch window attribution (e.g. latest post #1406):
+  // Posts published in the recent window within 72h of this date with forwards
+  // contributed to the channel's share activity in this window
+  for (const post of posts) {
+    if (post.forwards <= 0) continue;
+    const hoursDiff = (selectedDayEnd - post.date) / 3600_000;
+    // Post was published within 72h before or around this date
+    if (hoursDiff >= -14 && hoursDiff <= 72) {
+      const existing = contributionMap.get(post.key);
+      if (!existing) {
+        contributionMap.set(post.key, {
+          post,
+          viewsOnDate: post.views,
+          sharesOnDate: post.forwards,
+          shareContributionPct: 0,
+          viewContributionPct: 0,
+          source: 'message_stats',
+        });
+      } else {
+        if (existing.sharesOnDate === 0) {
+          existing.sharesOnDate = post.forwards;
+        }
+        if (existing.viewsOnDate === 0 && post.views > 0) {
+          existing.viewsOnDate = post.views;
         }
       }
     }

@@ -18,7 +18,13 @@ import {
   resolveDualAxisPlan,
   shouldUseDualAxis,
 } from './analyticsMath';
-import type { ParsedStatsGraph, PostDetailedStats, RawChannelMessage } from '../types/analytics';
+import type {
+  ChannelSnapshot,
+  DailyDeltaRecord,
+  ParsedStatsGraph,
+  PostDetailedStats,
+  RawChannelMessage,
+} from '../types/analytics';
 
 test('extractDailyActivityFromGraph extracts both per-message views and shares per day', () => {
   const msgJson = JSON.stringify({
@@ -364,4 +370,119 @@ test('attributeDateFromMessageStats automatically attributes posts published on 
   assert.equal(attribution.contributions[0].sharesOnDate, 7);
   assert.equal(attribution.attributedViewsSum, 85);
   assert.equal(attribution.attributedSharesSum, 7);
+});
+
+test('computeSnapshotDeltas ignores ancient posts missing from snapshot and attributes new posts', () => {
+  const snapshotDate = Date.UTC(2026, 10, 14, 12, 0);
+  const prevSnapshot: ChannelSnapshot = {
+    channelId: 100,
+    capturedAt: snapshotDate,
+    membersCount: 500,
+    posts: {},
+  };
+
+  const rawPosts: RawChannelMessage[] = [
+    {
+      id: 1342, // Published in April (months before snapshot)
+      date: Date.UTC(2026, 3, 18, 12, 0),
+      text: 'Old post',
+      views: 350,
+      forwards: 2,
+      replies: 0,
+      groupedId: null,
+      mediaKind: 'text',
+      reactions: [],
+    },
+    {
+      id: 1406, // Published AFTER snapshot
+      date: Date.UTC(2026, 10, 15, 10, 0),
+      text: 'New latest post',
+      views: 45,
+      forwards: 1,
+      replies: 0,
+      groupedId: null,
+      mediaKind: 'audio',
+      reactions: [],
+    },
+  ];
+
+  const posts = groupAlbumPosts(rawPosts);
+  const deltas = computeSnapshotDeltas(posts, prevSnapshot);
+
+  const oldPostDelta = deltas.find((p) => p.primaryId === 1342);
+  const newPostDelta = deltas.find((p) => p.primaryId === 1406);
+
+  // Ancient post must NOT receive fake deltaShares = 2!
+  assert.equal(oldPostDelta?.deltaShares, 0);
+  assert.equal(oldPostDelta?.deltaViews, 0);
+
+  // New post published after snapshot correctly receives its deltas
+  assert.equal(newPostDelta?.deltaShares, 1);
+  assert.equal(newPostDelta?.deltaViews, 45);
+});
+
+test('attributeDateFromMessageStats attributes latest post #1406 in recent launch window and purges bogus historical deltas', () => {
+  const posts = groupAlbumPosts([
+    {
+      id: 1342, // April 18 post
+      date: Date.UTC(2026, 3, 18),
+      text: 'April post',
+      views: 350,
+      forwards: 2,
+      replies: 0,
+      groupedId: null,
+      mediaKind: 'text',
+      reactions: [],
+    },
+    {
+      id: 1406, // Latest post published on Nov 15
+      date: Date.UTC(2026, 10, 15, 14, 0),
+      text: 'Latest post 1406',
+      views: 60,
+      forwards: 1,
+      replies: 0,
+      groupedId: null,
+      mediaKind: 'audio',
+      reactions: [],
+    },
+  ]);
+
+  const interactionsGraph: ParsedStatsGraph = {
+    id: 'interactions',
+    title: 'Interactions',
+    type: 'line',
+    timestamps: [Date.UTC(2026, 10, 15)],
+    series: [
+      { key: 'y0', label: 'Views', color: '#3390ec', values: [100] },
+      { key: 'y1', label: 'Shares', color: '#f5a623', values: [3] },
+    ],
+  };
+
+  // Simulate corrupt legacy dailyDelta in IndexedDB that falsely claimed #1342 got 2 shares on Nov 15
+  const bogusDeltas: DailyDeltaRecord[] = [
+    {
+      dateKey: '2026-11-15',
+      postKey: 'msg:1342',
+      primaryId: 1342,
+      deltaShares: 2,
+      deltaViews: 1,
+    },
+  ];
+
+  const attribution = attributeDateFromMessageStats({
+    dateKey: '2026-11-15',
+    interactionsGraph,
+    posts,
+    postStatsByPost: {},
+    dailyDeltas: bogusDeltas,
+    publicForwardsByPost: {},
+  });
+
+  // #1406 must be ranked #1 with sharesOnDate = 1
+  assert.equal(attribution.contributions[0].post.primaryId, 1406);
+  assert.equal(attribution.contributions[0].sharesOnDate, 1);
+
+  // #1342 must have had its corrupt delta discarded (sharesOnDate = 0)
+  const oldPostContrib = attribution.contributions.find((c) => c.post.primaryId === 1342);
+  assert.equal(oldPostContrib?.sharesOnDate ?? 0, 0);
 });
