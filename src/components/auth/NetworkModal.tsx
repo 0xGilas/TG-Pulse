@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Globe, Shield, Terminal, X } from 'lucide-react';
 import type { LanguageCode, NetworkConfig, NetworkMode } from '../../types/analytics';
 import { getTranslations } from '../../i18n/translations';
 import { testBridgeReachability } from '../../services/telegramBridge';
+import { useDialogAccessibility } from '../../utils/dialogA11y';
 import { PasswordField } from '../common/PasswordField';
 
 interface NetworkModalProps {
@@ -21,10 +22,13 @@ export const NetworkModal: React.FC<NetworkModalProps> = ({
   onSave,
 }) => {
   const t = getTranslations(lang);
+  const dialogRef = useRef<HTMLFormElement | null>(null);
   const [draft, setDraft] = useState<NetworkConfig>(config);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [copiedCmd, setCopiedCmd] = useState(false);
+
+  useDialogAccessibility(open, dialogRef);
 
   useEffect(() => {
     if (open) {
@@ -74,8 +78,10 @@ export const NetworkModal: React.FC<NetworkModalProps> = ({
     >
       <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
       <form
+        ref={dialogRef}
+        tabIndex={-1}
         onSubmit={handleSubmit}
-        className="relative z-10 w-full max-w-xl tg-sheet-glass rounded-2xl overflow-hidden"
+        className="relative z-10 w-full max-w-xl tg-sheet-glass rounded-2xl overflow-hidden focus:outline-none"
       >
         <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-3.5">
           <div className="flex items-center gap-2.5">

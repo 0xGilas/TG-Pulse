@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Layers, RefreshCw, X } from 'lucide-react';
 import type {
   LanguageCode,
@@ -8,24 +8,42 @@ import type {
   PublicForwardRecord,
 } from '../../types/analytics';
 import { getTranslations } from '../../i18n/translations';
+import { useDialogAccessibility } from '../../utils/dialogA11y';
 import { TelegramTimeChart } from '../charts/TelegramTimeChart';
 import { PostPreviewCard } from './PostPreviewCard';
 
-const UTC_DATETIME_FMT = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  timeZone: 'UTC',
-});
+function formatUtcDateTime(ts: number, lang: LanguageCode): string {
+  return new Intl.DateTimeFormat(lang === 'fa' ? 'fa-IR' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  }).format(ts);
+}
 
-const UTC_DATE_FMT = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
+function formatUtcDate(ts: number, lang: LanguageCode): string {
+  return new Intl.DateTimeFormat(lang === 'fa' ? 'fa-IR' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(ts);
+}
+
+function getSafeExternalTelegramUrl(raw?: string): string | null {
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.toString();
+    }
+  } catch {
+    // ignore invalid URL
+  }
+  return null;
+}
 
 const DRAWER_ROW_LIMIT = 40;
 
@@ -38,6 +56,7 @@ interface PostDetailDrawerProps {
   publicForwards: PublicForwardRecord[];
   isSampleMode: boolean;
   loadingDetails: boolean;
+  detailsError?: string | null;
   onLoadLiveDetails: (post: PostRecord) => void;
   onClose: () => void;
 }
@@ -51,12 +70,16 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
   publicForwards,
   isSampleMode,
   loadingDetails,
+  detailsError = null,
   onLoadLiveDetails,
   onClose,
 }) => {
   const t = getTranslations(lang);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
   const [showAllDaily, setShowAllDaily] = useState(false);
   const [showAllForwards, setShowAllForwards] = useState(false);
+
+  useDialogAccessibility(Boolean(post), drawerRef);
 
   useEffect(() => {
     setShowAllDaily(false);
@@ -82,7 +105,11 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
       aria-labelledby="post-drawer-title"
     >
       <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
-      <div className="relative z-10 w-full sm:max-w-lg tg-drawer-surface border-t sm:border-t-0 sm:border-s border-white/[0.12] max-h-[92vh] sm:max-h-full h-auto sm:h-full rounded-t-2xl sm:rounded-none flex flex-col shadow-2xl overflow-hidden">
+      <div
+        ref={drawerRef}
+        tabIndex={-1}
+        className="relative z-10 w-full sm:max-w-lg tg-drawer-surface border-t sm:border-t-0 sm:border-s border-white/[0.12] max-h-[92vh] sm:max-h-full h-auto sm:h-full rounded-t-2xl sm:rounded-none flex flex-col shadow-2xl overflow-hidden focus:outline-none"
+      >
         <div className="w-12 h-1 rounded-full bg-white/20 mx-auto my-2.5 sm:hidden shrink-0" />
         {/* Drawer Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.08] bg-[#10151D]">
@@ -90,8 +117,8 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
             <h2 id="post-drawer-title" className="text-sm font-semibold text-[#f5f7fa]">
               {t.drawerTitle}
             </h2>
-            <div dir="ltr" className="text-xs text-[#7f91a4] font-mono-num mt-0.5 text-start">
-              #{post.primaryId} · {UTC_DATETIME_FMT.format(post.date)} UTC
+            <div dir="ltr" className="text-xs text-[#8B9BB0] font-mono-num mt-0.5 text-start">
+              #{post.primaryId} · {formatUtcDateTime(post.date, lang)} UTC
             </div>
           </div>
 
@@ -115,11 +142,22 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
               mediaPreview={mediaPreview}
               loadingMediaPreview={loadingMediaPreview}
             />
-            {post.permalink && (
-              <div dir="ltr" className="text-[11px] text-[#5eb5f7] font-mono-num truncate">
-                {post.permalink}
-              </div>
-            )}
+            {(() => {
+              const safePermalink = getSafeExternalTelegramUrl(post.permalink);
+              if (!safePermalink) return null;
+              return (
+                <a
+                  href={safePermalink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  dir="ltr"
+                  className="inline-flex items-center gap-1.5 text-[11px] text-[#5eb5f7] hover:underline font-mono-num max-w-full"
+                >
+                  <span className="truncate">{safePermalink}</span>
+                  <ExternalLink className="w-3 h-3 shrink-0" />
+                </a>
+              );
+            })()}
           </div>
 
           {/* Native Telegram Overview Section (Matches attached Message Statistic layout) */}
@@ -173,15 +211,25 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
             </div>
 
             {!isSampleMode && (
-              <button
-                type="button"
-                disabled={loadingDetails}
-                onClick={() => onLoadLiveDetails(post)}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-[#3390ec] px-4 py-2 text-xs font-semibold text-white hover:bg-[#2a80d6] disabled:opacity-60 cursor-pointer"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loadingDetails ? 'animate-spin' : ''}`} />
-                <span>{t.loadLivePostStatsBtn}</span>
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={loadingDetails}
+                  onClick={() => onLoadLiveDetails(post)}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-[#3390ec] px-4 py-2 text-xs font-semibold text-white hover:bg-[#2a80d6] disabled:opacity-60 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingDetails ? 'animate-spin' : ''}`} />
+                  <span>{t.loadLivePostStatsBtn}</span>
+                </button>
+                {detailsError && (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-[#e55353]/40 bg-[#e55353]/10 px-3 py-2 text-xs text-[#fca5a5]"
+                  >
+                    {detailsError}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -200,15 +248,15 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
                     className="flex items-center justify-between py-2 text-xs"
                   >
                     <div>
-                      <span dir="ltr" className="font-mono-num text-[#7f91a4]">#{item.id}</span>
-                      <span className="mx-2 text-[#5d6f82]">·</span>
+                      <span dir="ltr" className="font-mono-num text-[#8B9BB0]">#{item.id}</span>
+                      <span className="mx-2 text-[#8596AA]">·</span>
                       <span className="text-[#f5f7fa] capitalize">
-                        Item {idx + 1} ({item.mediaKind})
+                        {t.itemLabel} {idx + 1} ({item.mediaKind})
                       </span>
                     </div>
-                    <div dir="ltr" className="font-mono-num text-[#7f91a4]">
-                      <span className="text-[#f5f7fa]">{item.views}</span> views ·{' '}
-                      <span className="text-[#f5a623] font-semibold">{item.forwards}</span> shares
+                    <div dir="ltr" className="font-mono-num text-[#8B9BB0]">
+                      <span className="text-[#f5f7fa]">{item.views}</span> {t.viewsWord} ·{' '}
+                      <span className="text-[#f5a623] font-semibold">{item.forwards}</span> {t.sharesWord}
                     </div>
                   </div>
                 ))}
@@ -238,6 +286,7 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
             <div className="p-4">
               <TelegramTimeChart
                 graph={details.viewsGraph}
+                lang={lang}
                 titleOverride={t.postTrendTitle}
                 dualAxisHint={lang === 'fa' ? 'محور چپ: ویو · محور راست: شیر' : 'Left: Views · Right: Shares'}
                 height={196}
@@ -260,11 +309,11 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
                     dir="ltr"
                     className="flex items-center justify-between py-2 text-xs font-mono-num"
                   >
-                    <span className="text-[#7f91a4]">{row.dateKey}</span>
+                    <span className="text-[#8B9BB0]">{row.dateKey}</span>
                     <div className="flex items-center gap-4">
-                      <span className="text-[#4dcd5e]">{row.views.toLocaleString('en-US')} views</span>
-                      <span className={row.shares > 0 ? 'text-[#f5a623] font-semibold' : 'text-[#5d6f82]'}>
-                        +{row.shares} shares
+                      <span className="text-[#4dcd5e]">{row.views.toLocaleString('en-US')} {t.viewsWord}</span>
+                      <span className={row.shares > 0 ? 'text-[#f5a623] font-semibold' : 'text-[#8596AA]'}>
+                        +{row.shares} {t.sharesWord}
                       </span>
                     </div>
                   </div>
@@ -292,30 +341,51 @@ export const PostDetailDrawer: React.FC<PostDetailDrawerProps> = React.memo(({
             ) : (
               <>
                 <div className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
-                  {visibleForwards.map((fwd) => (
-                    <div
-                      key={`${fwd.channelId}-${fwd.messageId}`}
-                      className="flex items-center justify-between gap-3 py-2.5"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-[#f5f7fa] truncate">
-                          {fwd.channelTitle}
-                          {fwd.channelUsername && (
-                            <span dir="ltr" className="inline-block text-[#5eb5f7] font-mono-num ms-1.5">
-                              @{fwd.channelUsername}
-                            </span>
-                          )}
+                  {visibleForwards.map((fwd) => {
+                    const fwdUrl = fwd.channelUsername
+                      ? `https://t.me/${encodeURIComponent(fwd.channelUsername)}/${fwd.messageId}`
+                      : null;
+                    const inner = (
+                      <>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-[#f5f7fa] truncate">
+                            {fwd.channelTitle}
+                            {fwd.channelUsername && (
+                              <span dir="ltr" className="inline-block text-[#5eb5f7] font-mono-num ms-1.5">
+                                @{fwd.channelUsername}
+                              </span>
+                            )}
+                          </div>
+                          <div dir="ltr" className="text-[11px] text-[#8B9BB0] font-mono-num mt-0.5 text-start">
+                            {formatUtcDate(fwd.date, lang)} · #{fwd.messageId}
+                          </div>
                         </div>
-                        <div dir="ltr" className="text-[11px] text-[#7f91a4] font-mono-num mt-0.5 text-start">
-                          {UTC_DATE_FMT.format(fwd.date)} · msg #{fwd.messageId}
+                        <div dir="ltr" className="flex items-center gap-2 shrink-0 text-xs font-mono-num text-[#4dcd5e]">
+                          <span>{fwd.views.toLocaleString('en-US')} {t.viewsWord}</span>
+                          {fwdUrl && <ExternalLink className="w-3.5 h-3.5 text-[#8B9BB0]" />}
                         </div>
+                      </>
+                    );
+
+                    return fwdUrl ? (
+                      <a
+                        key={`${fwd.channelId}-${fwd.messageId}`}
+                        href={fwdUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between gap-3 py-2.5 hover:bg-white/[0.03] rounded-md px-1 -mx-1 transition-colors"
+                      >
+                        {inner}
+                      </a>
+                    ) : (
+                      <div
+                        key={`${fwd.channelId}-${fwd.messageId}`}
+                        className="flex items-center justify-between gap-3 py-2.5"
+                      >
+                        {inner}
                       </div>
-                      <div dir="ltr" className="flex items-center gap-2 shrink-0 text-xs font-mono-num text-[#4dcd5e]">
-                        <span>{fwd.views.toLocaleString('en-US')} views</span>
-                        <ExternalLink className="w-3.5 h-3.5 text-[#7f91a4]" />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {!showAllForwards && forwardsList.length > DRAWER_ROW_LIMIT && (
                   <button

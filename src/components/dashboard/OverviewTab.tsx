@@ -3,10 +3,10 @@ import {
   ArrowUpRight,
   Flame,
   Info,
-  ExternalLink,
   Layers,
   Radar,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import type {
   ChannelAnalyticsBundle,
@@ -31,6 +31,7 @@ interface OverviewTabProps {
   scanningAttribution: boolean;
   attributionProgress: { completed: number; total: number } | null;
   onScanAttribution: () => void;
+  onAbortAttribution?: () => void;
   onSelectDate: (dateKey: string) => void;
   onOpenPost: (post: PostRecord) => void;
 }
@@ -55,6 +56,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
   scanningAttribution,
   attributionProgress,
   onScanAttribution,
+  onAbortAttribution,
   onSelectDate,
   onOpenPost,
 }) => {
@@ -166,13 +168,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
         <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-4">
           <h2 className="text-[13px] font-semibold text-[#5EC2F6]">{t.overviewSectionTitle}</h2>
           <div dir="ltr" className="text-[11px] font-mono-num text-[#8B9BB0]">
-            {new Date(overview.periodFrom).toLocaleDateString('en-US', {
+            {new Date(overview.periodFrom).toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', {
               month: 'short',
               day: 'numeric',
               timeZone: 'UTC',
             })}{' '}
             —{' '}
-            {new Date(overview.periodTo).toLocaleDateString('en-US', {
+            {new Date(overview.periodTo).toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', {
               month: 'short',
               day: 'numeric',
               timeZone: 'UTC',
@@ -288,6 +290,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
         {overview.interactionsGraph && (
           <TelegramTimeChart
             graph={overview.interactionsGraph}
+            lang={lang}
             titleOverride={t.interactionsTitle}
             subtitle={t.interactionsHint}
             dualAxisHint={lang === 'fa' ? 'محور چپ: ویو · محور راست: شیر' : 'Left: Views · Right: Shares'}
@@ -307,14 +310,26 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
           {/* Animated Attribution Progress Bar */}
           {scanningAttribution && attributionProgress && (
             <div className="px-5 py-3 border-b border-white/[0.08] bg-[#2AABEE]/[0.08] space-y-2">
-              <div className="flex items-center justify-between text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="text-[#5EC2F6] font-medium flex items-center gap-2">
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                   <span>{t.attributionProgressLabel}</span>
                 </span>
-                <span className="font-mono-num text-[#F0F4F8]">
-                  {Math.round((attributionProgress.completed / Math.max(1, attributionProgress.total)) * 100)}% ({attributionProgress.completed}/{attributionProgress.total})
-                </span>
+                <div className="flex items-center gap-2.5">
+                  <span className="font-mono-num text-[#F0F4F8]">
+                    {Math.round((attributionProgress.completed / Math.max(1, attributionProgress.total)) * 100)}% ({attributionProgress.completed}/{attributionProgress.total})
+                  </span>
+                  {onAbortAttribution && (
+                    <button
+                      type="button"
+                      onClick={onAbortAttribution}
+                      className="inline-flex items-center gap-1 rounded-md border border-[#EF4444]/40 bg-[#EF4444]/12 px-2 py-0.5 text-[11px] font-medium text-[#FCA5A5] hover:bg-[#EF4444]/20 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>{t.cancelScanBtn}</span>
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
                 <div
@@ -364,41 +379,41 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
           {/* 3-Column Date Reconciliation Strip (Hairline-divided, zero nested cards) */}
           <div className="border-y border-white/[0.07] bg-[#0B0F14]/60 grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.06]">
             <div className="px-5 py-3">
-              <div className="text-[11px] text-[#7f91a4]">{t.channelGraphLabel}</div>
+              <div className="text-[11px] text-[#8B9BB0]">{t.channelGraphLabel}</div>
               <div dir="ltr" className="mt-1 flex items-baseline gap-3 font-mono-num">
                 <span className="text-base font-bold text-[#4dcd5e]">
-                  {attribution.graphTotalViews.toLocaleString('en-US')} views
+                  {attribution.graphTotalViews.toLocaleString('en-US')} {t.viewsWord}
                 </span>
                 <span className="text-xs font-semibold text-[#f5a623]">
-                  +{attribution.graphTotalShares} shares
+                  +{attribution.graphTotalShares} {t.sharesWord}
                 </span>
               </div>
             </div>
 
             <div className="px-5 py-3">
-              <div className="text-[11px] text-[#7f91a4]">{t.attributedSumLabel}</div>
+              <div className="text-[11px] text-[#8B9BB0]">{t.attributedSumLabel}</div>
               <div dir="ltr" className="mt-1 flex items-baseline gap-3 font-mono-num">
                 <span className="text-base font-bold text-[#f5f7fa]">
-                  {attribution.attributedViewsSum.toLocaleString('en-US')} views
+                  {attribution.attributedViewsSum.toLocaleString('en-US')} {t.viewsWord}
                 </span>
                 <span className="text-xs font-semibold text-[#5eb5f7]">
-                  +{attribution.attributedSharesSum} shares
+                  +{attribution.attributedSharesSum} {t.sharesWord}
                 </span>
               </div>
             </div>
 
             <div className="px-5 py-3">
-              <div className="text-[11px] text-[#7f91a4]">{t.unattributedGapLabel}</div>
+              <div className="text-[11px] text-[#8B9BB0]">{t.unattributedGapLabel}</div>
               <div dir="ltr" className="mt-1 flex items-baseline gap-3 font-mono-num">
                 <span
                   className={`text-base font-bold ${
                     attribution.unattributedShares === 0 ? 'text-[#4dcd5e]' : 'text-[#f5a623]'
                   }`}
                 >
-                  {attribution.unattributedShares} shares
+                  {attribution.unattributedShares} {t.sharesWord}
                 </span>
-                <span className="text-[11px] text-[#7f91a4]">
-                  ({bundle.scanStatus.attributedPostsCount}/{posts.length} scanned)
+                <span className="text-[11px] text-[#8B9BB0]">
+                  ({bundle.scanStatus.attributedPostsCount}/{posts.length} {t.scannedLabel})
                 </span>
               </div>
             </div>
@@ -427,7 +442,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
                         <span dir="ltr">#{item.post.primaryId}</span>
                         <span aria-hidden="true">·</span>
                         <span>
-                          {new Date(item.post.date).toLocaleDateString('en-US', {
+                          {new Date(item.post.date).toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', {
                             month: 'short',
                             day: 'numeric',
                             timeZone: 'UTC',
@@ -469,10 +484,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
                             }}
                           />
                         </div>
-                        <span className="text-[11px] font-mono-num text-[#7f91a4]">
+                        <span className="text-[11px] font-mono-num text-[#8B9BB0]">
                           {item.sharesOnDate > 0
-                            ? `${item.shareContributionPct}% of shares`
-                            : `${item.viewContributionPct}% of views`}
+                            ? `${item.shareContributionPct}% ${t.ofSharesLabel}`
+                            : `${item.viewContributionPct}% ${t.ofViewsLabel}`}
                         </span>
                       </div>
                     </div>
@@ -480,13 +495,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
                     <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
                       <div className="text-end font-mono-num" dir="ltr">
                         <div className="text-xs font-semibold text-[#f5a623]">
-                          +{item.sharesOnDate} shares · {item.viewsOnDate.toLocaleString('en-US')} views
+                          +{item.sharesOnDate} {t.sharesWord} · {item.viewsOnDate.toLocaleString('en-US')} {t.viewsWord}
                         </div>
-                        <div className="text-[11px] text-[#7f91a4]">
-                          Pub {item.post.publicSharesCount} / Priv {item.post.privateSharesCount}
+                        <div className="text-[11px] text-[#8B9BB0]">
+                          {t.publicShort} {item.post.publicSharesCount} / {t.privateShort} {item.post.privateSharesCount}
                         </div>
                       </div>
-                      <ArrowUpRight className="w-4 h-4 text-[#5d6f82]" />
+                      <ArrowUpRight className="w-4 h-4 text-[#8596AA]" />
                     </div>
                   </button>
                 );
@@ -536,11 +551,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-[#7f91a4] truncate mt-0.5 font-mono-num">
-                        Post #{post.primaryId} · {forward.views.toLocaleString('en-US')} views
+                      <div className="text-[11px] text-[#8B9BB0] truncate mt-0.5 font-mono-num">
+                        #{post.primaryId} · {forward.views.toLocaleString('en-US')} {t.viewsWord}
                       </div>
                     </div>
-                    <ExternalLink className="w-3.5 h-3.5 text-[#7f91a4] shrink-0" />
+                    <ArrowUpRight className="w-3.5 h-3.5 text-[#8596AA] shrink-0" />
                   </button>
                 ))}
               </div>
@@ -554,6 +569,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
         {overview.growthGraph && (
           <TelegramTimeChart
             graph={overview.growthGraph}
+            lang={lang}
             titleOverride={t.growthTitle}
             height={210}
             showRangeSlider={false}
@@ -562,6 +578,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
         {overview.followersGraph && (
           <TelegramTimeChart
             graph={overview.followersGraph}
+            lang={lang}
             titleOverride={t.followersTitle}
             height={210}
             showRangeSlider={false}

@@ -159,7 +159,7 @@ export const HourlyBreakdownChart: React.FC<HourlyBreakdownChartProps> = React.m
                       x={padLeft - 8}
                       y={y + 3.5}
                       textAnchor="end"
-                      fill="#5d6f82"
+                      fill="#8596AA"
                       className="text-[10px] font-mono-num"
                     >
                       {formatCompactNumber(tick)}
@@ -251,7 +251,7 @@ export const HourlyBreakdownChart: React.FC<HourlyBreakdownChartProps> = React.m
                       y={height - 8}
                       textAnchor="middle"
                       className={`text-[10px] font-mono-num ${
-                        isHighlighted ? 'fill-[#5EC2F6] font-semibold' : 'fill-[#5d6f82]'
+                        isHighlighted ? 'fill-[#5EC2F6] font-semibold' : 'fill-[#8596AA]'
                       }`}
                     >
                       {String(hour).padStart(2, '0')}

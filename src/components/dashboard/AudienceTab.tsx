@@ -89,8 +89,13 @@ export const AudienceTab: React.FC<AudienceTabProps> = React.memo(({ lang, bundl
       <section className="tg-panel rounded-xl p-5 space-y-4" aria-label={t.heatmapTitle}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-[13px] font-semibold text-[#5eb5f7]">{t.heatmapTitle}</h3>
-            <p className="text-xs text-[#7f91a4] mt-0.5">{t.heatmapSub}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-[13px] font-semibold text-[#5eb5f7]">{t.heatmapTitle}</h3>
+              <span className="text-[10px] font-medium text-[#8B9BB0] border border-white/10 bg-[#0B0F14]/80 rounded px-1.5 py-0.5">
+                {t.utcHintBadge}
+              </span>
+            </div>
+            <p className="text-xs text-[#8B9BB0] mt-0.5">{t.heatmapSub}</p>
           </div>
           {goldenCell && (
             <div className="text-xs">
@@ -125,9 +130,7 @@ export const AudienceTab: React.FC<AudienceTabProps> = React.memo(({ lang, bundl
                   {dayLabel}
                 </div>
                 {HOUR_SLOTS.map((slot, hourBlock) => {
-                  const cell = matrix.find(
-                    (c) => c.weekday === weekday && c.hourBlock === hourBlock,
-                  );
+                  const cell = matrix[weekday * 6 + hourBlock];
                   const count = cell?.postCount ?? 0;
                   const rate = cell?.avgShareRate ?? 0;
                   const intensity = count > 0 ? Math.max(0.18, rate / maxShareRate) : 0;
@@ -167,7 +170,7 @@ export const AudienceTab: React.FC<AudienceTabProps> = React.memo(({ lang, bundl
                           </span>
                         </>
                       ) : (
-                        <span className="text-[10px] text-[#5d6f82]">—</span>
+                        <span className="text-[10px] text-[#8596AA]">—</span>
                       )}
                     </div>
                   );
@@ -182,6 +185,7 @@ export const AudienceTab: React.FC<AudienceTabProps> = React.memo(({ lang, bundl
         {overview.viewsBySourceGraph && (
           <TelegramTimeChart
             graph={overview.viewsBySourceGraph}
+            lang={lang}
             titleOverride={t.viewsBySourceTitle}
             height={220}
             showRangeSlider={false}
@@ -194,7 +198,7 @@ export const AudienceTab: React.FC<AudienceTabProps> = React.memo(({ lang, bundl
             {lang === 'fa' ? 'زبان مخاطبان کانال' : 'Subscriber Languages'}
           </h3>
           {langSlices.length === 0 ? (
-            <p className="text-xs text-[#7f91a4]">No language statistics available yet.</p>
+            <p className="text-xs text-[#8B9BB0]">{t.noLanguageDataMsg}</p>
           ) : (
             <div className="space-y-3">
               {langSlices.map((slice) => (
@@ -225,12 +229,12 @@ export const AudienceTab: React.FC<AudienceTabProps> = React.memo(({ lang, bundl
         <div className="overflow-x-auto">
           <table className="w-full text-start border-collapse">
             <thead>
-              <tr className="border-b border-white/[0.06] bg-[#111923]/60 text-[11px] font-semibold text-[#7f91a4]">
-                <th className="py-2.5 px-5 text-start">Format</th>
-                <th className="py-2.5 px-4 text-end">Posts</th>
-                <th className="py-2.5 px-4 text-end">Avg Views</th>
-                <th className="py-2.5 px-4 text-end">Avg Shares</th>
-                <th className="py-2.5 px-5 text-end">Avg Share Rate</th>
+              <tr className="border-b border-white/[0.06] bg-[#111923]/60 text-[11px] font-semibold text-[#8B9BB0]">
+                <th className="py-2.5 px-5 text-start">{t.formatCol}</th>
+                <th className="py-2.5 px-4 text-end">{t.postsCol}</th>
+                <th className="py-2.5 px-4 text-end">{t.avgViewsCol}</th>
+                <th className="py-2.5 px-4 text-end">{t.avgSharesCol}</th>
+                <th className="py-2.5 px-5 text-end">{t.avgShareRateCol}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.06]">

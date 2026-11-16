@@ -645,3 +645,24 @@ test('attributeDateFromMessageStats discards index 0 baseline carryover for olde
   assert.equal(attribution.attributedSharesSum, 3);
   assert.equal(attribution.attributedViewsSum, 8);
 });
+
+test('exportPostsToCsv neutralizes spreadsheet formula injection prefixes', () => {
+  const posts = groupAlbumPosts([
+    {
+      id: 9001,
+      date: Date.UTC(2026, 10, 15),
+      text: '=HYPERLINK("https://evil.test","Click")',
+      views: 10,
+      forwards: 1,
+      replies: 0,
+      groupedId: null,
+      mediaKind: 'text',
+      reactions: [],
+      permalink: '+cmd|calc',
+    },
+  ]);
+
+  const csv = exportPostsToCsv(posts);
+  assert.ok(csv.includes("'=HYPERLINK"));
+  assert.ok(csv.includes("'+cmd|calc"));
+});

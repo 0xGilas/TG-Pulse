@@ -2,11 +2,24 @@
  * TG Pulse — Personal Cloudflare Worker WebSocket Relay
  * Deploy to your own Cloudflare account (`wrangler deploy`) to relay encrypted MTProto
  * WebSocket traffic to official *.web.telegram.org endpoints without installing local software.
+ *
+ * Optional Wrangler secrets/vars for hardening:
+ *   - RELAY_SECRET: shared token expected via `?token=<secret>` in your Cloudflare Relay URL
+ *   - ALLOWED_ORIGINS: comma-separated list of allowed browser Origins (e.g. "https://you.github.io")
  */
 const TELEGRAM_HOST_REGEX = /^(?:[a-zA-Z0-9-]+\.)?web\.telegram\.org$/;
 
+function constantTimeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 export default {
-  async fetch(request) {
+  async fetch(request, env = {}) {
     const upgradeHeader = request.headers.get('Upgrade');
     if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
       return new Response('TG Pulse Relay Ready. Connect via WebSocket with ?target=wss://...', {
@@ -14,7 +27,27 @@ export default {
       });
     }
 
+    const allowedOriginsRaw = typeof env.ALLOWED_ORIGINS === 'string' ? env.ALLOWED_ORIGINS : '';
+    if (allowedOriginsRaw.trim().length > 0) {
+      const origin = request.headers.get('Origin') || '';
+      const allowlist = allowedOriginsRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (!origin || !allowlist.includes(origin)) {
+        return new Response('Origin not allowed', { status: 403 });
+      }
+    }
+
     const url = new URL(request.url);
+    const relaySecret = typeof env.RELAY_SECRET === 'string' ? env.RELAY_SECRET.trim() : '';
+    if (relaySecret.length > 0) {
+      const token = url.searchParams.get('token') || request.headers.get('x-relay-token') || '';
+      if (!constantTimeEqual(token, relaySecret)) {
+        return new Response('Unauthorized relay token', { status: 401 });
+      }
+    }
+
     const targetRaw = url.searchParams.get('target');
     if (!targetRaw) {
       return new Response('Missing target parameter', { status: 400 });
@@ -31,11 +64,12 @@ export default {
       return new Response('Target hostname not allowed', { status: 403 });
     }
 
-    // Clone headers, strip identifying client info for privacy, and rewrite Host
+    // Clone headers, strip identifying client info & auth tokens for privacy, and rewrite Host
     const headers = new Headers(request.headers);
     headers.delete('cf-connecting-ip');
     headers.delete('x-forwarded-for');
     headers.delete('x-real-ip');
+    headers.delete('x-relay-token');
     headers.set('Host', targetUrl.hostname);
 
     const httpTarget = targetUrl.toString().replace(/^wss:/, 'https:');

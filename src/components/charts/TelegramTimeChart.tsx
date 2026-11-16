@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
-import type { ParsedStatsGraph, StatsSeriesLine } from '../../types/analytics';
+import type { LanguageCode, ParsedStatsGraph, StatsSeriesLine } from '../../types/analytics';
+import { getTranslations } from '../../i18n/translations';
 import {
   computeAxisTicks,
   formatCompactNumber,
@@ -10,6 +11,7 @@ import {
 
 interface TelegramTimeChartProps {
   graph: ParsedStatsGraph;
+  lang?: LanguageCode;
   titleOverride?: string;
   subtitle?: string;
   dualAxisHint?: string;
@@ -20,9 +22,13 @@ interface TelegramTimeChartProps {
   compact?: boolean;
 }
 
-function formatAxisDate(ts: number): string {
+function formatAxisDate(ts: number, lang: LanguageCode = 'en'): string {
   const d = new Date(ts);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return d.toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
 }
 
 function getSeriesBounds(
@@ -70,6 +76,7 @@ function getSeriesBounds(
 export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
   ({
     graph,
+    lang = 'en',
     titleOverride,
     subtitle,
     dualAxisHint,
@@ -79,6 +86,7 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
     showRangeSlider = true,
     compact = false,
   }) => {
+    const t = getTranslations(lang);
     const chartTitle = titleOverride ?? graph.title;
     const totalPoints = graph.timestamps.length;
     const [rangeStart, setRangeStart] = useState(0);
@@ -246,6 +254,29 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
       [onSelectDate, visibleIndices, resolveLocalIdxFromPointer, graph.timestamps],
     );
 
+    const handleChartKeyDown = useCallback(
+      (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (visibleIndices.length === 0) return;
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const delta = e.key === 'ArrowRight' ? 1 : -1;
+          setHoverIdx((prev) => {
+            const base = prev === null ? (delta > 0 ? 0 : visibleIndices.length - 1) : prev + delta;
+            return Math.max(0, Math.min(visibleIndices.length - 1, base));
+          });
+        } else if ((e.key === 'Enter' || e.key === ' ') && onSelectDate && hoverIdx !== null) {
+          const globalIdx = visibleIndices[hoverIdx];
+          if (globalIdx !== undefined && graph.timestamps[globalIdx] !== undefined) {
+            e.preventDefault();
+            onSelectDate(formatDateKey(graph.timestamps[globalIdx]));
+          }
+        } else if (e.key === 'Escape') {
+          setHoverIdx(null);
+        }
+      },
+      [visibleIndices, onSelectDate, hoverIdx, graph.timestamps],
+    );
+
     // Memoize static polylines / bars separately from hoverIdx so pointer scrubbing stays 60fps
     const staticSeriesLayer = useMemo(() => {
       if (graph.type === 'bar' || graph.type === 'stacked_bar') {
@@ -353,8 +384,8 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
       return (
         <div className="tg-panel rounded-xl p-5">
           <div className="text-[13px] font-semibold text-[#5eb5f7]">{chartTitle}</div>
-          <div className="mt-3 text-xs text-[#7f91a4]">
-            {graph.error || 'No chart data available for this period.'}
+          <div className="mt-3 text-xs text-[#8B9BB0]">
+            {graph.error || t.noChartDataMsg}
           </div>
         </div>
       );
@@ -379,13 +410,20 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
             </div>
             {subtitle && <p className="text-xs text-[#7f91a4] mt-0.5">{subtitle}</p>}
           </div>
-          <div dir="ltr" className="text-xs text-[#7f91a4] font-mono-num">
-            {formatAxisDate(graph.timestamps[clampedStart])}
-            {clampedEnd !== clampedStart ? ` — ${formatAxisDate(graph.timestamps[clampedEnd])}` : ''}
+          <div dir="ltr" className="text-xs text-[#8B9BB0] font-mono-num">
+            {formatAxisDate(graph.timestamps[clampedStart], lang)}
+            {clampedEnd !== clampedStart ? ` — ${formatAxisDate(graph.timestamps[clampedEnd], lang)}` : ''}
           </div>
         </div>
 
-        <div className="relative select-none" dir="ltr">
+        <div
+          className="relative select-none rounded-lg focus-visible:outline-2 focus-visible:outline-[#2AABEE]"
+          dir="ltr"
+          tabIndex={0}
+          role="application"
+          aria-label={`${chartTitle} interactive chart`}
+          onKeyDown={handleChartKeyDown}
+        >
           <svg
             viewBox={`0 0 ${svgWidth} ${height}`}
             className="w-full h-auto overflow-visible"
@@ -434,7 +472,7 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
                       x={padLeft - 8}
                       y={y + 4}
                       textAnchor="end"
-                      fill={isDualAxis && leftSeries ? leftSeries.color : '#5d6f82'}
+                      fill={isDualAxis && leftSeries ? leftSeries.color : '#8596AA'}
                       className="text-[10px] font-mono-num opacity-95"
                     >
                       {formatCompactNumber(tick)}
@@ -537,10 +575,10 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
                     y={height - 8}
                     textAnchor="middle"
                     className={`text-[10px] font-mono-num ${
-                      isSelected ? 'fill-[#f5a623] font-semibold' : 'fill-[#5d6f82]'
+                      isSelected ? 'fill-[#f5a623] font-semibold' : 'fill-[#8596AA]'
                     }`}
                   >
-                    {formatAxisDate(graph.timestamps[globalIdx])}
+                    {formatAxisDate(graph.timestamps[globalIdx], lang)}
                   </text>
                 );
               })}
@@ -566,8 +604,8 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
               className="pointer-events-none absolute top-2 right-2 tg-tooltip-glass rounded-xl px-3 py-2"
               style={{ minWidth: 152 }}
             >
-              <div className="text-[11px] font-medium text-[#7f91a4] font-mono-num mb-1">
-                {formatAxisDate(graph.timestamps[activeHoverGlobalIdx])}
+              <div className="text-[11px] font-medium text-[#8B9BB0] font-mono-num mb-1">
+                {formatAxisDate(graph.timestamps[activeHoverGlobalIdx], lang)}
               </div>
               <div className="space-y-1">
                 {activeSeries.map((s) => (
@@ -586,7 +624,7 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
         {/* Telegram-style Range Slider */}
         {showRangeSlider && totalPoints > 4 && (
           <div className="mt-2 pt-2.5 border-t border-white/[0.06] flex items-center gap-3" dir="ltr">
-            <span className="text-[11px] text-[#5d6f82] whitespace-nowrap">Range</span>
+            <span className="text-[11px] text-[#8596AA] whitespace-nowrap">{t.rangeLabel}</span>
             <input
               type="range"
               aria-label={`${chartTitle} start range`}
@@ -663,7 +701,7 @@ export const TelegramTimeChart: React.FC<TelegramTimeChartProps> = React.memo(
                           : 'border-white/[0.08] bg-[#111923] text-[#7f91a4] hover:text-[#f5f7fa]'
                       }`}
                     >
-                      {formatAxisDate(graph.timestamps[idx])}: +{sharesVal}
+                      {formatAxisDate(graph.timestamps[idx], lang)}: +{sharesVal}
                     </button>
                   );
                 })}

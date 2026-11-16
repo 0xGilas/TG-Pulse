@@ -23,12 +23,7 @@ jobs:
         with:
           bun-version: latest
       - name: Install dependencies
-        run: |
-          if [ -f bun.lock ] || [ -f bun.lockb ]; then
-            bun install --frozen-lockfile
-          else
-            bun install
-          fi
+        run: bun install
       - name: Run unit tests
         run: bun test src/utils/analyticsMath.test.ts src/utils/cryptoVault.test.ts
       - name: Typecheck

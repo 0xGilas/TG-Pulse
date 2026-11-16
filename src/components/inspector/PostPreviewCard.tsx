@@ -8,7 +8,6 @@ import {
   Link2,
   Mic,
   Music,
-  Play,
 } from 'lucide-react';
 import type {
   LanguageCode,
@@ -78,8 +77,8 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = React.memo(({
                 isBlurryThumbOnly ? 'blur-sm scale-[1.02]' : ''
               }`}
             />
-          ) : (
-            <div className="h-36 flex flex-col items-center justify-center gap-2 text-[#586778]">
+            ) : (
+            <div className="h-36 flex flex-col items-center justify-center gap-2 text-[#8596AA]">
               <ImageIcon className="w-7 h-7" />
               <span className="text-xs">
                 {loadingMediaPreview ? labels.loadingPreview : 'Photo'}
@@ -113,11 +112,6 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = React.memo(({
             ) : (
               <Music className="w-6 h-6 text-[#2AABEE]" />
             )}
-            <div className="absolute inset-0 bg-black/25 flex items-center justify-center">
-              <div className="w-7 h-7 rounded-full bg-[#2AABEE]/90 text-[#090C10] flex items-center justify-center shadow">
-                <Play className="w-3.5 h-3.5 fill-current ms-0.5" />
-              </div>
-            </div>
           </div>
 
           <div className="min-w-0 flex-1 space-y-1">
@@ -142,8 +136,8 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = React.memo(({
               ) : null}
               {meta?.mimeType ? (
                 <>
-                  <span className="text-[#586778]">·</span>
-                  <span className="text-[#586778] uppercase">{meta.mimeType.split('/')[1] ?? meta.mimeType}</span>
+                  <span className="text-[#8596AA]">·</span>
+                  <span className="text-[#8596AA] uppercase">{meta.mimeType.split('/')[1] ?? meta.mimeType}</span>
                 </>
               ) : null}
             </div>
@@ -164,17 +158,16 @@ export const PostPreviewCard: React.FC<PostPreviewCardProps> = React.memo(({
               }`}
             />
           ) : (
-            <div className="h-36 flex flex-col items-center justify-center gap-2 text-[#586778]">
+            <div className="h-36 flex flex-col items-center justify-center gap-2 text-[#8596AA]">
               <Film className="w-7 h-7" />
               <span className="text-xs">{meta?.fileName ?? 'Video'}</span>
             </div>
           )}
 
           <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent pointer-events-none" />
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-11 h-11 rounded-full bg-black/75 border border-white/25 text-white flex items-center justify-center">
-              <Play className="w-5 h-5 fill-current ms-0.5" />
-            </div>
+          <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 rounded bg-black/75 px-2 py-0.5 text-[10px] font-medium text-[#F0F4F8] border border-white/15 pointer-events-none">
+            <Film className="w-3 h-3 text-[#5EC2F6]" />
+            <span>{meta?.isAnimation ? 'GIF' : lang === 'fa' ? 'پیش‌نمایش ویدیو' : 'Video Preview'}</span>
           </div>
 
           <div

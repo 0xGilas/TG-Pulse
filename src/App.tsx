@@ -31,7 +31,10 @@ import {
   loadChannelSnapshotHistory,
   loadEncryptedSessionBundle,
   loadNetworkConfig,
+  sanitizeNetworkForUnencryptedStorage,
   saveApiCredentials,
+  saveChannelMetaHistory,
+  saveChannelPostStats,
   saveChannelSnapshotHistory,
   saveEncryptedSessionBundle,
   saveNetworkConfig,
@@ -75,22 +78,47 @@ const DEFAULT_NETWORK: NetworkConfig = {
 const ENV_API_ID = Number(import.meta.env?.VITE_TELEGRAM_API_ID) || 0;
 const ENV_API_HASH = String(import.meta.env?.VITE_TELEGRAM_API_HASH || '').trim();
 
-export const TELEGRAM_WEB_CREDS: ApiCredentials = {
-  apiId: 2496,
-  apiHash: '8da85b0d5b160252315b0f2ed6729041',
-};
-
 const DEFAULT_API_CREDS: ApiCredentials =
   ENV_API_ID > 0 && ENV_API_HASH.length >= 16
     ? { apiId: ENV_API_ID, apiHash: ENV_API_HASH }
     : { apiId: 0, apiHash: '' };
 
-const LEGACY_EMPTY_CREDS: ApiCredentials = {
-  apiId: 0,
-  apiHash: '',
-};
-
 type DashboardTab = 'overview' | 'detective' | 'audience';
+
+function mergeDailyDeltas(
+  existing: DailyDeltaRecord[],
+  incoming: DailyDeltaRecord[],
+): DailyDeltaRecord[] {
+  if (incoming.length === 0) return existing.slice(-2000);
+  const byKey = new Map<string, DailyDeltaRecord>();
+  for (const item of existing) {
+    const k = `${item.dateKey}:${item.postKey}`;
+    const prev = byKey.get(k);
+    if (prev) {
+      byKey.set(k, {
+        ...prev,
+        deltaShares: prev.deltaShares + item.deltaShares,
+        deltaViews: prev.deltaViews + item.deltaViews,
+      });
+    } else {
+      byKey.set(k, { ...item });
+    }
+  }
+  for (const item of incoming) {
+    const k = `${item.dateKey}:${item.postKey}`;
+    const prev = byKey.get(k);
+    if (prev) {
+      byKey.set(k, {
+        ...prev,
+        deltaShares: prev.deltaShares + item.deltaShares,
+        deltaViews: prev.deltaViews + item.deltaViews,
+      });
+    } else {
+      byKey.set(k, { ...item });
+    }
+  }
+  return Array.from(byKey.values()).slice(-2000);
+}
 
 function isValidApiCreds(creds?: ApiCredentials | null): creds is ApiCredentials {
   return Boolean(
@@ -186,6 +214,7 @@ export function App() {
     total: number;
   } | null>(null);
   const [loadingPostDetails, setLoadingPostDetails] = useState(false);
+  const [postDetailsError, setPostDetailsError] = useState<string | null>(null);
   const [mediaPreviewsByPost, setMediaPreviewsByPost] = useState<Record<string, PostMediaPreview>>({});
   const mediaPreviewsRef = useRef<Record<string, PostMediaPreview>>({});
   mediaPreviewsRef.current = mediaPreviewsByPost;
@@ -315,11 +344,11 @@ export function App() {
       });
 
       const todayKey = formatDateKey(Date.now());
-      const newDailyDeltas: DailyDeltaRecord[] = [...(history?.dailyDeltas ?? [])];
+      const incomingDeltas: DailyDeltaRecord[] = [];
       if (prevSnapshot) {
         for (const post of postsWithDeltas) {
           if (post.deltaShares > 0) {
-            newDailyDeltas.push({
+            incomingDeltas.push({
               dateKey: todayKey,
               postKey: post.key,
               primaryId: post.primaryId,
@@ -329,6 +358,7 @@ export function App() {
           }
         }
       }
+      const newDailyDeltas = mergeDailyDeltas(history?.dailyDeltas ?? [], incomingDeltas);
 
       const nextSnapshot = buildSnapshotFromPosts(
         res.channel.id,
@@ -337,7 +367,7 @@ export function App() {
       );
       await saveChannelSnapshotHistory(channelId, {
         latestSnapshot: nextSnapshot,
-        dailyDeltas: newDailyDeltas.slice(-2000),
+        dailyDeltas: newDailyDeltas,
         postStatsByPost: cachedPostStats,
       });
 
@@ -441,32 +471,29 @@ export function App() {
         setBundlesByChannel((prev) => {
           const current = prev[channelId];
           if (!current) return prev;
+          const target = current.posts.find((p) => p.messageIds.includes(msgId));
+          if (!target || forwards <= target.forwards) return prev;
+
           const todayKey = formatDateKey(Date.now());
+          const diff = forwards - target.forwards;
           const updatedPosts = current.posts.map((p) => {
-            if (!p.messageIds.includes(msgId)) return p;
-            const diff = Math.max(0, forwards - p.forwards);
-            const nextForwards = Math.max(p.forwards, forwards);
+            if (p.key !== target.key) return p;
             return {
               ...p,
-              forwards: nextForwards,
-              privateSharesCount: Math.max(0, nextForwards - p.publicSharesCount),
+              forwards,
+              privateSharesCount: Math.max(0, forwards - p.publicSharesCount),
               deltaShares: p.deltaShares + diff,
             };
           });
-          const target = current.posts.find((p) => p.messageIds.includes(msgId));
-          const updatedDeltas =
-            target && forwards > target.forwards
-              ? [
-                  ...current.dailyDeltas,
-                  {
-                    dateKey: todayKey,
-                    postKey: target.key,
-                    primaryId: target.primaryId,
-                    deltaShares: forwards - target.forwards,
-                    deltaViews: 0,
-                  },
-                ]
-              : current.dailyDeltas;
+          const updatedDeltas = mergeDailyDeltas(current.dailyDeltas, [
+            {
+              dateKey: todayKey,
+              postKey: target.key,
+              primaryId: target.primaryId,
+              deltaShares: diff,
+              deltaViews: 0,
+            },
+          ]);
 
           return {
             ...prev,
@@ -496,20 +523,6 @@ export function App() {
     }
     setForceShowApiBox(false);
     return effective;
-  };
-
-  const _unusedValidate = (credsToCheck: ApiCredentials = apiCreds): ApiCredentials | null => {
-    if (!isValidApiCreds(credsToCheck)) {
-      setForceShowApiBox(true);
-      setAuthError(
-        lang === 'fa'
-          ? 'لطفاً ابتدا API ID و API Hash معتبر خودتان را از my.telegram.org در بخش تنظیمات API وارد کنید.'
-          : 'Please enter a valid API ID and API Hash from my.telegram.org inside Custom API Credentials.',
-      );
-      return null;
-    }
-    setForceShowApiBox(false);
-    return credsToCheck;
   };
 
   const handleStartQr = useCallback(async () => {
@@ -683,12 +696,20 @@ export function App() {
       await telegramBridge.logoutAndTerminate();
       await clearSavedSession();
       setSavedSessionMeta({ exists: false, hasPin: false });
+      const sanitizedNet = sanitizeNetworkForUnencryptedStorage(networkRef.current);
+      setNetwork(sanitizedNet);
+      networkRef.current = sanitizedNet;
+      saveNetworkConfig(sanitizedNet).catch(() => {});
     }
+    setVaultPin('');
+    setPersistenceMode('ephemeral');
+    persistenceRef.current = { mode: 'ephemeral', pin: '' };
     setIsSampleMode(false);
     setChannels([]);
     setBundlesByChannel({});
     setMediaPreviewsByPost({});
     setLoadingMediaPreview(false);
+    setPostDetailsError(null);
     setActiveChannelId(null);
     setSelectedPostKey(null);
     setSelectedDateKey(null);
@@ -746,10 +767,12 @@ export function App() {
   }, [activeBundle, isSampleMode, selectedPost, selectedPreviewCacheKey]);
 
   const handleOpenPost = useCallback((p: PostRecord) => {
+    setPostDetailsError(null);
     setSelectedPostKey(p.key);
   }, []);
 
   const handleCloseDrawer = useCallback(() => {
+    setPostDetailsError(null);
     setSelectedPostKey(null);
   }, []);
 
@@ -777,6 +800,7 @@ export function App() {
   const handleLoadLivePostDetails = useCallback(async (post: PostRecord) => {
     if (!activeBundle || isSampleMode) return;
     setLoadingPostDetails(true);
+    setPostDetailsError(null);
     try {
       const details = await telegramBridge.fetchPostDetails(
         activeBundle.channel.id,
@@ -805,6 +829,7 @@ export function App() {
               }
             : p,
         );
+        saveChannelPostStats(cur.channel.id, nextPostStats).catch(() => {});
         return {
           ...prev,
           [activeBundle.channel.id]: {
@@ -822,10 +847,18 @@ export function App() {
           },
         };
       });
+    } catch (err) {
+      setPostDetailsError(
+        err instanceof Error ? err.message : t.postStatsErrorMsg,
+      );
     } finally {
       setLoadingPostDetails(false);
     }
-  }, [activeBundle, isSampleMode]);
+  }, [activeBundle, isSampleMode, t.postStatsErrorMsg]);
+
+  const handleAbortAttribution = useCallback(() => {
+    telegramBridge.abortAttribution().catch(() => {});
+  }, []);
 
   const handleScanDateAttribution = useCallback(async () => {
     if (!activeBundle || isSampleMode || scanningAttribution) return;
@@ -950,11 +983,7 @@ export function App() {
       activeBundle.channel.membersCount,
       activeBundle.posts,
     );
-    await saveChannelSnapshotHistory(activeBundle.channel.id, {
-      latestSnapshot: snap,
-      dailyDeltas: activeBundle.dailyDeltas,
-      postStatsByPost: activeBundle.postStatsByPost,
-    });
+    await saveChannelMetaHistory(activeBundle.channel.id, snap, activeBundle.dailyDeltas);
     setBundlesByChannel((prev) => ({
       ...prev,
       [activeBundle.channel.id]: {
@@ -979,12 +1008,8 @@ export function App() {
           deltaViews: p.deltaViews,
         }));
 
-      const mergedDeltas = [...activeBundle.dailyDeltas, ...extraDeltas];
-      await saveChannelSnapshotHistory(activeBundle.channel.id, {
-        latestSnapshot: snapshot,
-        dailyDeltas: mergedDeltas,
-        postStatsByPost: activeBundle.postStatsByPost,
-      });
+      const mergedDeltas = mergeDailyDeltas(activeBundle.dailyDeltas, extraDeltas);
+      await saveChannelMetaHistory(activeBundle.channel.id, snapshot, mergedDeltas);
       setBundlesByChannel((prev) => ({
         ...prev,
         [activeBundle.channel.id]: {
@@ -1239,7 +1264,7 @@ export function App() {
                     ))}
                   </div>
                   <div className="h-56 rounded-lg bg-white/[0.02] border border-white/[0.04] flex items-center justify-center animate-pulse">
-                    <span className="text-xs text-[#586778] font-mono-num">
+                    <span className="text-xs text-[#8596AA] font-mono-num">
                       {lang === 'fa' ? 'در حال رندر گراف‌های MTProto...' : 'Rendering MTProto graphs...'}
                     </span>
                   </div>
@@ -1261,6 +1286,7 @@ export function App() {
                   scanningAttribution={scanningAttribution}
                   attributionProgress={attributionProgress}
                   onScanAttribution={handleScanDateAttribution}
+                  onAbortAttribution={handleAbortAttribution}
                   onSelectDate={handleSelectDate}
                   onOpenPost={handleOpenPost}
                 />
@@ -1300,6 +1326,7 @@ export function App() {
             }
             isSampleMode={isSampleMode}
             loadingDetails={loadingPostDetails}
+            detailsError={postDetailsError}
             onLoadLiveDetails={handleLoadLivePostDetails}
             onClose={handleCloseDrawer}
           />

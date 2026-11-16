@@ -358,9 +358,12 @@ export function attributeDateFromMessageStats(params: {
   for (const post of posts) {
     const detailed = postStatsByPost[post.key];
     if (!detailed) continue;
-    const dailyBreakdown = detailed.viewsGraph
-      ? extractDailyActivityFromGraph(detailed.viewsGraph, post.date)
-      : detailed.dailyBreakdown;
+    const dailyBreakdown =
+      detailed.dailyBreakdown.length > 0
+        ? detailed.dailyBreakdown
+        : detailed.viewsGraph
+          ? extractDailyActivityFromGraph(detailed.viewsGraph, post.date)
+          : [];
     const dayRow = dailyBreakdown.find((d) => d.dateKey === dateKey);
     if (!dayRow || (dayRow.views <= 0 && dayRow.shares <= 0)) continue;
 
@@ -448,38 +451,13 @@ export function attributeDateFromMessageStats(params: {
   const selectedDayEnd = Date.parse(`${dateKey}T23:59:59.999Z`);
 
   for (const post of posts) {
+    if (post.views <= 0 && post.forwards <= 0) continue;
     const isExactDay = formatDateKey(post.date) === dateKey;
     const isTimezoneMatch =
-      post.date >= selectedDayStart - 14 * 3600_000 && post.date <= selectedDayEnd + 14 * 3600_000;
+      isExactDay ||
+      (post.date >= selectedDayStart - 14 * 3600_000 && post.date <= selectedDayEnd + 14 * 3600_000);
 
-    if (isExactDay || isTimezoneMatch) {
-      const existing = contributionMap.get(post.key);
-      if (!existing) {
-        if (post.views > 0 || post.forwards > 0) {
-          contributionMap.set(post.key, {
-            post,
-            viewsOnDate: post.views,
-            sharesOnDate: post.forwards,
-            shareContributionPct: 0,
-            viewContributionPct: 0,
-            source: 'message_stats',
-          });
-        }
-      } else {
-        if (existing.viewsOnDate === 0 && post.views > 0) {
-          existing.viewsOnDate = post.views;
-        }
-        if (existing.sharesOnDate === 0 && post.forwards > 0) {
-          existing.sharesOnDate = post.forwards;
-        }
-      }
-    }
-  }
-
-  // 5) Direct publication fallback (e.g. latest post #1406 published on this date):
-  for (const post of posts) {
-    if (formatDateKey(post.date) !== dateKey) continue;
-    if (post.forwards <= 0 && post.views <= 0) continue;
+    if (!isTimezoneMatch) continue;
     const existing = contributionMap.get(post.key);
     if (!existing) {
       contributionMap.set(post.key, {
@@ -491,11 +469,11 @@ export function attributeDateFromMessageStats(params: {
         source: 'message_stats',
       });
     } else {
-      if (existing.sharesOnDate === 0 && post.forwards > 0) {
-        existing.sharesOnDate = post.forwards;
-      }
       if (existing.viewsOnDate === 0 && post.views > 0) {
         existing.viewsOnDate = post.views;
+      }
+      if (existing.sharesOnDate === 0 && post.forwards > 0) {
+        existing.sharesOnDate = post.forwards;
       }
     }
   }
@@ -741,7 +719,10 @@ export function computeFormatInsights(posts: PostRecord[]): FormatInsight[] {
 }
 
 function escapeCsvCell(value: string | number): string {
-  const str = String(value);
+  let str = String(value);
+  if (typeof value === 'string' && /^\s*[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
   if (/[",\n\r]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }

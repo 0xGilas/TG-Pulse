@@ -489,6 +489,7 @@ async function fetchSinglePostStats(
   postKey: string,
   statsDc?: number,
   postDateMs?: number,
+  knownForwardsCount?: number,
 ): Promise<PostDetailedStats> {
   let viewsGraph: ParsedStatsGraph | undefined;
   let reactionsGraph: ParsedStatsGraph | undefined;
@@ -529,55 +530,57 @@ async function fetchSinglePostStats(
 
   const publicForwards: PublicForwardRecord[] = [];
   let publicSharesTotal = 0;
-  try {
-    const pub = await client.call(
-      {
-        _: 'stats.getMessagePublicForwards',
-        channel: tlInputChannel,
-        msgId: postId,
-        offset: '',
-        limit: 50,
-      },
-      statsDc ? { dcId: statsDc } : undefined,
-    );
+  if (knownForwardsCount === undefined || knownForwardsCount > 0) {
+    try {
+      const pub = await client.call(
+        {
+          _: 'stats.getMessagePublicForwards',
+          channel: tlInputChannel,
+          msgId: postId,
+          offset: '',
+          limit: 50,
+        },
+        statsDc ? { dcId: statsDc } : undefined,
+      );
 
-    publicSharesTotal = typeof pub.count === 'number' ? pub.count : 0;
+      publicSharesTotal = typeof pub.count === 'number' ? pub.count : 0;
 
-    const chatIndex = new Map<number, { title: string; username?: string }>();
-    for (const c of pub.chats) {
-      if ('title' in c) {
-        chatIndex.set(c.id, {
-          title: c.title,
-          username: 'username' in c ? c.username : undefined,
-        });
+      const chatIndex = new Map<number, { title: string; username?: string }>();
+      for (const c of pub.chats) {
+        if ('title' in c) {
+          chatIndex.set(c.id, {
+            title: c.title,
+            username: 'username' in c ? c.username : undefined,
+          });
+        }
       }
-    }
 
-    for (const f of pub.forwards) {
-      if (f._ === 'publicForwardMessage' && f.message._ === 'message') {
-        const m = f.message;
-        const peerId =
-          m.peerId._ === 'peerChannel'
-            ? m.peerId.channelId
-            : m.peerId._ === 'peerChat'
-              ? m.peerId.chatId
-              : 0;
-        const info = chatIndex.get(peerId);
-        publicForwards.push({
-          channelId: peerId,
-          channelTitle: info?.title ?? `Channel #${peerId}`,
-          channelUsername: info?.username,
-          messageId: m.id,
-          date: m.date * 1000,
-          views: m.views ?? 0,
-        });
+      for (const f of pub.forwards) {
+        if (f._ === 'publicForwardMessage' && f.message._ === 'message') {
+          const m = f.message;
+          const peerId =
+            m.peerId._ === 'peerChannel'
+              ? m.peerId.channelId
+              : m.peerId._ === 'peerChat'
+                ? m.peerId.chatId
+                : 0;
+          const info = chatIndex.get(peerId);
+          publicForwards.push({
+            channelId: peerId,
+            channelTitle: info?.title ?? `Channel #${peerId}`,
+            channelUsername: info?.username,
+            messageId: m.id,
+            date: m.date * 1000,
+            views: m.views ?? 0,
+          });
+        }
       }
+      if (publicSharesTotal === 0 && publicForwards.length > 0) {
+        publicSharesTotal = publicForwards.length;
+      }
+    } catch {
+      // Ignore if public forwards unavailable
     }
-    if (publicSharesTotal === 0 && publicForwards.length > 0) {
-      publicSharesTotal = publicForwards.length;
-    }
-  } catch {
-    // Ignore if public forwards unavailable
   }
 
   return {
@@ -1160,6 +1163,7 @@ async function handleCommand(cmd: WorkerCommand): Promise<unknown> {
             candidate.key,
             cmd.statsDc,
             candidate.date,
+            candidate.forwards,
           );
           const evergreenRatio = computeEvergreenRatio(candidate.date, details.dailyBreakdown);
           results.push({ postKey: candidate.key, details, evergreenRatio });

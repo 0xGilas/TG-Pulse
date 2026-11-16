@@ -4,6 +4,7 @@ import {
   decryptVaultPayload,
   encryptVaultBundle,
   normalizePinDigits,
+  sanitizeNetworkForUnencryptedStorage,
   VaultError,
   resetPinLockout,
 } from './cryptoVault';
@@ -92,4 +93,21 @@ test('decryptVaultPayload locks out after 5 consecutive incorrect PIN attempts',
   );
 
   resetPinLockout();
+});
+
+test('sanitizeNetworkForUnencryptedStorage strips SOCKS5 password while preserving non-secret fields', () => {
+  const sanitized = sanitizeNetworkForUnencryptedStorage({
+    mode: 'socks5-bridge',
+    socks5: {
+      bridgeUrl: 'ws://127.0.0.1:8787',
+      host: '127.0.0.1',
+      port: 1080,
+      username: 'alice',
+      password: 'super-secret-password',
+    },
+    cfRelayUrl: '',
+  });
+  assert.equal(sanitized.socks5.password, '');
+  assert.equal(sanitized.socks5.username, 'alice');
+  assert.equal(sanitized.socks5.host, '127.0.0.1');
 });

@@ -51,13 +51,43 @@ export interface EncryptedPayload {
 
 export const PBKDF2_ITERATIONS_V3 = 600_000;
 export const PBKDF2_ITERATIONS_LEGACY = 120_000;
-const DEFAULT_DEVICE_SECRET = 'tg-pulse-local-device-key-v1';
 const DEVICE_SECRET_STORAGE_KEY = 'tg_pulse_device_entropy_v2';
+const PIN_LOCKOUT_STORAGE_KEY = 'tg_pulse_pin_lockout_v1';
 
+let ephemeralRuntimeSecret: string | null = null;
 let failedPinAttempts = 0;
 let pinLockoutUntil = 0;
 
+function syncLockoutFromStorage(): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(PIN_LOCKOUT_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { attempts?: number; until?: number };
+        failedPinAttempts = Math.max(failedPinAttempts, Number(parsed.attempts) || 0);
+        pinLockoutUntil = Math.max(pinLockoutUntil, Number(parsed.until) || 0);
+      }
+    }
+  } catch {
+    // ignore storage read errors
+  }
+}
+
+function persistLockoutToStorage(): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(
+        PIN_LOCKOUT_STORAGE_KEY,
+        JSON.stringify({ attempts: failedPinAttempts, until: pinLockoutUntil }),
+      );
+    }
+  } catch {
+    // ignore storage write errors
+  }
+}
+
 export function checkPinLockout(): { locked: boolean; remainingSec: number } {
+  syncLockoutFromStorage();
   const now = Date.now();
   if (pinLockoutUntil > now) {
     return { locked: true, remainingSec: Math.ceil((pinLockoutUntil - now) / 1000) };
@@ -68,6 +98,13 @@ export function checkPinLockout(): { locked: boolean; remainingSec: number } {
 export function resetPinLockout(): void {
   failedPinAttempts = 0;
   pinLockoutUntil = 0;
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(PIN_LOCKOUT_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
 }
 
 export function getOrCreateLocalDeviceSecret(): string {
@@ -82,9 +119,13 @@ export function getOrCreateLocalDeviceSecret(): string {
       return secret;
     }
   } catch {
-    // Fallback in node or restricted environments
+    // Fallback to per-process random ephemeral key below
   }
-  return DEFAULT_DEVICE_SECRET;
+  if (!ephemeralRuntimeSecret) {
+    const rand = globalThis.crypto.getRandomValues(new Uint8Array(32));
+    ephemeralRuntimeSecret = bytesToBase64(rand);
+  }
+  return ephemeralRuntimeSecret;
 }
 
 /**
@@ -263,6 +304,7 @@ export async function decryptVaultPayload(
     if (failedPinAttempts >= 5) {
       pinLockoutUntil = Date.now() + 30_000;
     }
+    persistLockoutToStorage();
     throw new VaultError('WRONG_PIN', 'WRONG_PIN');
   }
 
@@ -272,9 +314,6 @@ export async function decryptVaultPayload(
   const ciphertext = base64ToBytes(payload.ciphertext);
 
   const deviceSecretsToTry = [getOrCreateLocalDeviceSecret()];
-  if (!deviceSecretsToTry.includes(DEFAULT_DEVICE_SECRET)) {
-    deviceSecretsToTry.push(DEFAULT_DEVICE_SECRET);
-  }
 
   const iterationTiers =
     payload.formatVersion && payload.formatVersion >= 3
@@ -397,10 +436,6 @@ async function idbGet<T>(storeName: string, key: string): Promise<T | null> {
 }
 
 async function idbSet<T>(storeName: string, key: string, value: T): Promise<void> {
-  if (storeName === STORE_VAULT) {
-    // Always mirror encrypted vault records in localStorage fallback for restrictive iframes
-    writeLocalFallback(key, value);
-  }
   try {
     const db = await openVaultDb();
     await new Promise<void>((resolve, reject) => {
@@ -411,8 +446,17 @@ async function idbSet<T>(storeName: string, key: string, value: T): Promise<void
       const store = tx.objectStore(storeName);
       store.put(value, key);
     });
+    if (storeName === STORE_VAULT) {
+      // Remove any stale localStorage fallback copy once IndexedDB succeeds
+      deleteLocalFallback(key);
+    }
   } catch (err) {
-    if (storeName !== STORE_VAULT) throw err;
+    if (storeName === STORE_VAULT) {
+      // Only use localStorage fallback when IndexedDB is blocked/unavailable (e.g. restrictive iframe)
+      writeLocalFallback(key, value);
+      return;
+    }
+    throw err;
   }
 }
 
@@ -484,8 +528,19 @@ export async function clearSavedSession(): Promise<void> {
   await idbDelete(STORE_VAULT, SESSION_KEY);
 }
 
+export function sanitizeNetworkForUnencryptedStorage(config: NetworkConfig): NetworkConfig {
+  return {
+    ...config,
+    socks5: {
+      ...config.socks5,
+      // Never persist SOCKS5 password in plaintext storage; it is only stored encrypted inside the PIN-protected vault bundle.
+      password: '',
+    },
+  };
+}
+
 export async function saveNetworkConfig(config: NetworkConfig): Promise<void> {
-  await idbSet(STORE_VAULT, NETWORK_KEY, config);
+  await idbSet(STORE_VAULT, NETWORK_KEY, sanitizeNetworkForUnencryptedStorage(config));
 }
 
 export async function loadNetworkConfig(): Promise<NetworkConfig | null> {
@@ -497,12 +552,32 @@ export async function loadNetworkConfig(): Promise<NetworkConfig | null> {
 }
 
 export async function saveApiCredentials(creds: ApiCredentials): Promise<void> {
-  await idbSet(STORE_VAULT, API_CREDS_KEY, creds);
+  if (!creds.apiId && !creds.apiHash) {
+    await idbDelete(STORE_VAULT, API_CREDS_KEY);
+    return;
+  }
+  const encrypted = await encryptVaultBundle({
+    sessionString: JSON.stringify({ apiId: creds.apiId, apiHash: creds.apiHash }),
+  });
+  await idbSet(STORE_VAULT, API_CREDS_KEY, encrypted);
 }
 
 export async function loadApiCredentials(): Promise<ApiCredentials | null> {
   try {
-    return await idbGet<ApiCredentials>(STORE_VAULT, API_CREDS_KEY);
+    const raw = await idbGet<EncryptedPayload | ApiCredentials>(STORE_VAULT, API_CREDS_KEY);
+    if (!raw) return null;
+    if ('ciphertext' in raw && typeof raw.ciphertext === 'string') {
+      const bundle = await decryptVaultPayload(raw);
+      const parsed = JSON.parse(bundle.sessionString) as Partial<ApiCredentials>;
+      if (typeof parsed.apiId === 'number' && typeof parsed.apiHash === 'string') {
+        return { apiId: parsed.apiId, apiHash: parsed.apiHash };
+      }
+      return null;
+    }
+    if ('apiId' in raw && typeof raw.apiId === 'number') {
+      return raw;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -514,17 +589,55 @@ export interface StoredChannelHistory {
   postStatsByPost?: Record<string, PostDetailedStats>;
 }
 
+interface StoredChannelMeta {
+  latestSnapshot: ChannelSnapshot | null;
+  dailyDeltas: DailyDeltaRecord[];
+}
+
+export async function saveChannelMetaHistory(
+  channelId: number,
+  latestSnapshot: ChannelSnapshot | null,
+  dailyDeltas: DailyDeltaRecord[],
+): Promise<void> {
+  await idbSet<StoredChannelMeta>(STORE_SNAPSHOTS, `ch:${channelId}:meta`, {
+    latestSnapshot,
+    dailyDeltas: dailyDeltas.slice(-2000),
+  });
+}
+
+export async function saveChannelPostStats(
+  channelId: number,
+  postStatsByPost: Record<string, PostDetailedStats>,
+): Promise<void> {
+  await idbSet(STORE_SNAPSHOTS, `ch:${channelId}:stats`, postStatsByPost);
+}
+
 export async function saveChannelSnapshotHistory(
   channelId: number,
   history: StoredChannelHistory,
 ): Promise<void> {
-  await idbSet(STORE_SNAPSHOTS, `ch:${channelId}`, history);
+  await saveChannelMetaHistory(channelId, history.latestSnapshot, history.dailyDeltas);
+  if (history.postStatsByPost) {
+    await saveChannelPostStats(channelId, history.postStatsByPost);
+  }
 }
 
 export async function loadChannelSnapshotHistory(
   channelId: number,
 ): Promise<StoredChannelHistory | null> {
   try {
+    const [meta, stats] = await Promise.all([
+      idbGet<StoredChannelMeta>(STORE_SNAPSHOTS, `ch:${channelId}:meta`),
+      idbGet<Record<string, PostDetailedStats>>(STORE_SNAPSHOTS, `ch:${channelId}:stats`),
+    ]);
+    if (meta || stats) {
+      return {
+        latestSnapshot: meta?.latestSnapshot ?? null,
+        dailyDeltas: meta?.dailyDeltas ?? [],
+        postStatsByPost: stats ?? {},
+      };
+    }
+    // Legacy single-record fallback
     return await idbGet<StoredChannelHistory>(STORE_SNAPSHOTS, `ch:${channelId}`);
   } catch {
     return null;

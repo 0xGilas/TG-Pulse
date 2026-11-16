@@ -3,11 +3,11 @@ import {
   ArrowRight,
   ExternalLink,
   CheckCircle2,
-  Sparkles,
   ChevronDown,
   ChevronUp,
   Globe,
   KeyRound,
+  Loader2,
   Lock,
   Play,
   QrCode,
@@ -119,9 +119,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [previewDayIdx, setPreviewDayIdx] = useState(1);
-  const [apiMode, setApiMode] = useState<'quick' | 'custom'>(() =>
-    apiCreds.apiId > 0 && apiCreds.apiId !== 2496 ? 'custom' : 'quick',
-  );
   const apiIdRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -285,7 +282,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
 
                     <div className="text-end font-mono-num shrink-0">
                       <div className="text-[#F59E0B] font-semibold">+{row.shares} sh</div>
-                      <div className="text-[11px] text-[#586778]">
+                      <div className="text-[11px] text-[#8596AA]">
                         Pub {row.pub} / Priv {row.priv}
                       </div>
                     </div>
@@ -307,7 +304,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
               </div>
             </div>
 
-            <div className="text-xs text-[#586778] flex flex-wrap items-center gap-x-2 gap-y-1">
+            <div className="text-xs text-[#8596AA] flex flex-wrap items-center gap-x-2 gap-y-1">
               <span>{t.zeroBackendBadge}</span>
               <span aria-hidden="true">·</span>
               <span>
@@ -364,9 +361,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
                   <button
                     type="submit"
                     disabled={busy}
-                    className="w-full rounded-lg bg-[#2AABEE] px-4 py-2 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 transition-colors cursor-pointer"
+                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#2AABEE] px-4 py-2 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 transition-colors cursor-pointer"
                   >
-                    {busy ? '...' : t.unlockSessionBtn}
+                    {busy ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>{t.connectingLabel}</span>
+                      </>
+                    ) : (
+                      t.unlockSessionBtn
+                    )}
                   </button>
                 </form>
               )}
@@ -481,7 +485,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
                           <span>{lang === 'fa' ? 'کلید تلگرام معتبر است و در این مرورگر ذخیره شد.' : 'API Credentials ready & saved locally.'}</span>
                         </div>
                       ) : (
-                        <p className="text-[11px] text-[#586778] pt-0.5">
+                        <p className="text-[11px] text-[#8596AA] pt-0.5">
                           {lang === 'fa' ? 'اطلاعات فقط در مرورگر شما می‌ماند و به هیچ سروری ارسال نمی‌شود.' : 'Stored strictly in your local browser — zero backend.'}
                         </p>
                       )}
@@ -552,9 +556,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
                         <button
                           type="submit"
                           disabled={busy}
-                          className="w-full rounded-lg bg-[#2AABEE] py-2.5 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 transition-colors cursor-pointer"
+                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#2AABEE] py-2.5 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 transition-colors cursor-pointer"
                         >
-                          {busy ? '...' : t.submit2FaBtn}
+                          {busy ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>{t.connectingLabel}</span>
+                            </>
+                          ) : (
+                            t.submit2FaBtn
+                          )}
                         </button>
                       </form>
                     ) : (
@@ -586,17 +597,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
                                 }
                                 handleAction(onStartQr);
                               }}
-                              className={`rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors cursor-pointer ${
+                              className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors cursor-pointer ${
                                 hasApiCreds
                                   ? 'bg-[#2AABEE] text-[#090C10] hover:bg-[#3CB7F5]'
                                   : 'bg-white/10 text-[#8B9BB0] hover:bg-white/15'
                               }`}
                             >
-                              {busy || authStep === 'connecting'
-                                ? '...'
-                                : hasApiCreds
-                                  ? t.generateQrBtn
-                                  : (lang === 'fa' ? 'ابتدا API ID را وارد کنید' : 'Enter API ID first')}
+                              {busy || authStep === 'connecting' ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>{t.connectingLabel}</span>
+                                </>
+                              ) : hasApiCreds ? (
+                                t.generateQrBtn
+                              ) : lang === 'fa' ? (
+                                'ابتدا API ID را وارد کنید'
+                              ) : (
+                                'Enter API ID first'
+                              )}
                             </button>
                           </div>
                         )}
@@ -642,17 +660,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
                               setTimeout(() => apiIdRef.current?.focus(), 60);
                             }
                           }}
-                          className={`w-full rounded-lg py-2.5 text-xs font-semibold transition-colors cursor-pointer ${
+                          className={`w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-semibold transition-colors cursor-pointer ${
                             hasApiCreds
                               ? 'bg-[#2AABEE] text-[#090C10] hover:bg-[#3CB7F5]'
                               : 'bg-white/10 text-[#8B9BB0] hover:bg-white/15'
                           }`}
                         >
-                          {busy
-                            ? '...'
-                            : hasApiCreds
-                              ? t.sendCodeBtn
-                              : (lang === 'fa' ? 'ابتدا API ID را در بالا وارد کنید' : 'Enter API ID above first')}
+                          {busy ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>{t.connectingLabel}</span>
+                            </>
+                          ) : hasApiCreds ? (
+                            t.sendCodeBtn
+                          ) : lang === 'fa' ? (
+                            'ابتدا API ID را در بالا وارد کنید'
+                          ) : (
+                            'Enter API ID above first'
+                          )}
                         </button>
                       </form>
                     ) : authStep === 'code_sent' ? (
@@ -682,9 +707,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
                         <button
                           type="submit"
                           disabled={busy}
-                          className="w-full rounded-lg bg-[#2AABEE] py-2.5 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 transition-colors cursor-pointer"
+                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#2AABEE] py-2.5 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 transition-colors cursor-pointer"
                         >
-                          {busy ? '...' : t.verifyCodeBtn}
+                          {busy ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>{t.connectingLabel}</span>
+                            </>
+                          ) : (
+                            t.verifyCodeBtn
+                          )}
                         </button>
                       </form>
                     ) : (
@@ -712,9 +744,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
                         <button
                           type="submit"
                           disabled={busy}
-                          className="w-full rounded-lg bg-[#2AABEE] py-2.5 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 transition-colors cursor-pointer"
+                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#2AABEE] py-2.5 text-xs font-semibold text-[#090C10] hover:bg-[#3CB7F5] disabled:opacity-60 transition-colors cursor-pointer"
                         >
-                          {busy ? '...' : t.submit2FaBtn}
+                          {busy ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>{t.connectingLabel}</span>
+                            </>
+                          ) : (
+                            t.submit2FaBtn
+                          )}
                         </button>
                       </form>
                     )}
@@ -753,7 +792,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
                 </label>
 
                 {persistenceMode === 'vault' && (
-                  <div>
+                  <div className="space-y-1.5">
                     <label htmlFor="vault-pin" className="block text-[11px] text-[#8B9BB0] mb-1">
                       {t.vaultPinLabel}
                     </label>
@@ -767,6 +806,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
                       hideLabel={t.hidePasswordLabel}
                       inputClassName="text-xs font-mono-num"
                     />
+                    {vaultPin.trim().length === 0 && (
+                      <p className="text-[11px] text-[#F59E0B]">{t.noPinWarning}</p>
+                    )}
                   </div>
                 )}
               </div>

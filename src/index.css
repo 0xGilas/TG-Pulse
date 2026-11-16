@@ -10,8 +10,8 @@
   --tg-border: rgba(255, 255, 255, 0.08);
   --tg-border-strong: rgba(255, 255, 255, 0.14);
   --tg-text: #f0f4f8;
-  --tg-text-secondary: #8b9bb0;
-  --tg-text-muted: #586778;
+  --tg-text-secondary: #98a8bc;
+  --tg-text-muted: #8596aa;
   --tg-accent: #2aabee;
   --tg-accent-soft: #5ec2f6;
   --tg-green: #22c55e;
@@ -24,11 +24,11 @@
   body {
     background-color: var(--tg-bg);
     color: var(--tg-text);
-    font-family: 'Plus Jakarta Sans', 'Vazirmatn', system-ui, -apple-system, sans-serif;
+    font-family: 'Plus Jakarta Sans', 'Vazirmatn', system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
   }
 
   html[dir='rtl'] body {
-    font-family: 'Vazirmatn', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-family: 'Vazirmatn', 'Plus Jakarta Sans', 'Segoe UI', Tahoma, system-ui, -apple-system, sans-serif;
   }
 
   :where(button, a, input, select, textarea):focus-visible {

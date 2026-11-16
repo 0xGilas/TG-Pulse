@@ -39,7 +39,7 @@ export const PasswordField: React.FC<PasswordFieldProps> = ({
         value={value}
         onChange={onChange}
         dir={dir}
-        className={`flex-1 min-w-0 bg-transparent px-3.5 py-2 text-sm text-[#F0F4F8] placeholder:text-[#586778] border-0 focus:outline-none ${inputClassName}`}
+        className={`flex-1 min-w-0 bg-transparent px-3.5 py-2 text-sm text-[#F0F4F8] placeholder:text-[#8596AA] border-0 focus:outline-none ${inputClassName}`}
         {...rest}
       />
       <button

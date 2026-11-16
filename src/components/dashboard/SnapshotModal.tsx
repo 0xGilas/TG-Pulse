@@ -7,6 +7,7 @@ import type {
 } from '../../types/analytics';
 import { getTranslations } from '../../i18n/translations';
 import { buildSnapshotFromPosts, exportPostsToCsv } from '../../utils/analyticsMath';
+import { useDialogAccessibility } from '../../utils/dialogA11y';
 import { PasswordField } from '../common/PasswordField';
 
 interface SnapshotModalProps {
@@ -45,11 +46,14 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
   onWipeVault,
 }) => {
   const t = getTranslations(lang);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [vaultPinInput, setVaultPinInput] = useState('');
   const [savingVault, setSavingVault] = useState(false);
+
+  useDialogAccessibility(open && Boolean(bundle), dialogRef);
 
   if (!open || !bundle) return null;
 
@@ -128,7 +132,11 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
       aria-labelledby="snapshot-modal-title"
     >
       <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
-      <div className="relative z-10 w-full max-w-lg tg-sheet-glass rounded-2xl overflow-hidden">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative z-10 w-full max-w-lg tg-sheet-glass rounded-2xl overflow-hidden focus:outline-none"
+      >
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.08]">
           <h2 id="snapshot-modal-title" className="text-sm font-semibold text-[#f5f7fa]">
             {t.snapshotModalTitle}
@@ -147,10 +155,13 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
           <p className="text-xs leading-relaxed text-[#7f91a4]">{t.snapshotModalDesc}</p>
 
           {bundle.lastSnapshotAt && (
-            <div className="text-xs text-[#7f91a4] font-mono-num pb-2 border-b border-white/[0.06]">
-              Last baseline:{' '}
+            <div className="text-xs text-[#8B9BB0] font-mono-num pb-2 border-b border-white/[0.06]">
+              {t.lastBaselineLabel}:{' '}
               <span dir="ltr" className="text-[#f5f7fa]">
-                {new Date(bundle.lastSnapshotAt).toLocaleString('en-US', { timeZone: 'UTC' })} UTC
+                {new Date(bundle.lastSnapshotAt).toLocaleString(lang === 'fa' ? 'fa-IR' : 'en-US', {
+                  timeZone: 'UTC',
+                })}{' '}
+                UTC
               </span>
             </div>
           )}
@@ -238,6 +249,9 @@ export const SnapshotModal: React.FC<SnapshotModalProps> = ({
                   {savingVault ? '...' : lang === 'fa' ? 'ذخیره در گاوصندوق' : 'Lock & Save'}
                 </button>
               </div>
+              {vaultPinInput.trim().length === 0 && (
+                <p className="text-[11px] text-[#F59E0B]">{t.noPinWarning}</p>
+              )}
             </form>
           )}
 

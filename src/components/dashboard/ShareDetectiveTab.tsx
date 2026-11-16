@@ -91,7 +91,7 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = React.memo(({
       <div className="p-4 border-b border-white/[0.07] space-y-3 bg-[#0B0F14]/45">
         <div className="flex flex-col sm:flex-row gap-3 justify-between">
           <div className="flex items-center flex-1 max-w-md rounded-lg border border-white/12 bg-[#0B0F14] overflow-hidden focus-within:border-[#2AABEE] focus-within:ring-2 focus-within:ring-[#2AABEE]/25 transition-colors">
-            <span className="ps-3 pe-1 text-[#586778] shrink-0 flex items-center pointer-events-none">
+            <span className="ps-3 pe-1 text-[#8596AA] shrink-0 flex items-center pointer-events-none">
               <Search className="w-4 h-4" />
             </span>
             <input
@@ -100,7 +100,7 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = React.memo(({
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t.searchPlaceholder}
               aria-label={t.searchPlaceholder}
-              className="flex-1 min-w-0 bg-transparent px-2.5 py-2 text-xs text-[#F0F4F8] placeholder:text-[#586778] border-0 focus:outline-none"
+              className="flex-1 min-w-0 bg-transparent px-2.5 py-2 text-xs text-[#F0F4F8] placeholder:text-[#8596AA] border-0 focus:outline-none"
             />
           </div>
 
@@ -207,8 +207,8 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = React.memo(({
                       dir="ltr"
                       className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] font-mono-num"
                     >
-                      <span className="text-[#7f91a4]">
-                        {new Date(post.date).toLocaleDateString('en-US', {
+                      <span className="text-[#8B9BB0]">
+                        {new Date(post.date).toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', {
                           month: 'short',
                           day: 'numeric',
                           timeZone: 'UTC',
@@ -289,8 +289,8 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = React.memo(({
                             </div>
                           </button>
                         </td>
-                        <td className="py-2.5 px-3 text-xs text-[#7f91a4] font-mono-num whitespace-nowrap">
-                          {new Date(post.date).toLocaleDateString('en-US', {
+                        <td className="py-2.5 px-3 text-xs text-[#8B9BB0] font-mono-num whitespace-nowrap">
+                          {new Date(post.date).toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', {
                             month: 'short',
                             day: 'numeric',
                             timeZone: 'UTC',
@@ -299,7 +299,7 @@ export const ShareDetectiveTab: React.FC<ShareDetectiveTabProps> = React.memo(({
                         <td className="py-2.5 px-3 text-end text-xs font-mono-num whitespace-nowrap">
                           <span dir="ltr" className="inline-flex items-baseline gap-1.5">
                             <span className="text-[#f5f7fa]">{post.views.toLocaleString('en-US')}</span>
-                            <span className={isOutlier ? 'text-[#4dcd5e] font-semibold' : 'text-[#5d6f82]'}>
+                            <span className={isOutlier ? 'text-[#4dcd5e] font-semibold' : 'text-[#8596AA]'}>
                               ({getMedianMultiplier(post.views)})
                             </span>
                           </span>

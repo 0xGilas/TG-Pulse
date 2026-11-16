@@ -99,7 +99,7 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
 
       {/* Channels List */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        <div className="px-2.5 py-1.5 text-[11px] font-medium text-[#586778]">
+        <div className="px-2.5 py-1.5 text-[11px] font-medium text-[#8596AA]">
           {t.channelsHeader}
         </div>
 
