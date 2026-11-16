@@ -72,12 +72,19 @@ const DEFAULT_NETWORK: NetworkConfig = {
   cfRelayUrl: '',
 };
 
+const ENV_API_ID = Number(import.meta.env?.VITE_TELEGRAM_API_ID) || 0;
+const ENV_API_HASH = String(import.meta.env?.VITE_TELEGRAM_API_HASH || '').trim();
+
 export const TELEGRAM_WEB_CREDS: ApiCredentials = {
   apiId: 2496,
   apiHash: '8da85b0d5b160252315b0f2ed6729041',
 };
 
-const DEFAULT_API_CREDS: ApiCredentials = TELEGRAM_WEB_CREDS;
+const DEFAULT_API_CREDS: ApiCredentials =
+  ENV_API_ID > 0 && ENV_API_HASH.length >= 16
+    ? { apiId: ENV_API_ID, apiHash: ENV_API_HASH }
+    : { apiId: 0, apiHash: '' };
+
 const LEGACY_EMPTY_CREDS: ApiCredentials = {
   apiId: 0,
   apiHash: '',
@@ -86,7 +93,13 @@ const LEGACY_EMPTY_CREDS: ApiCredentials = {
 type DashboardTab = 'overview' | 'detective' | 'audience';
 
 function isValidApiCreds(creds?: ApiCredentials | null): creds is ApiCredentials {
-  return Boolean(creds && creds.apiId > 0 && creds.apiHash && creds.apiHash.trim().length >= 16);
+  return Boolean(
+    creds &&
+      creds.apiId > 0 &&
+      creds.apiId !== 2496 &&
+      creds.apiHash &&
+      creds.apiHash.trim().length >= 16,
+  );
 }
 
 function pickDefaultDateKey(graph?: ParsedStatsGraph): string | null {
@@ -209,7 +222,7 @@ export function App() {
       }
     });
     loadApiCredentials().then((creds) => {
-      if (creds) {
+      if (creds && isValidApiCreds(creds)) {
         setApiCreds(creds);
         apiCredsRef.current = creds;
       }
@@ -468,18 +481,21 @@ export function App() {
     });
   }, [handleAuthorized]);
 
-  const validateApiCreds = (credsToCheck: ApiCredentials = apiCreds): ApiCredentials | null => {
-    if (!isValidApiCreds(credsToCheck)) {
+  const validateApiCreds = (credsToCheck: ApiCredentials = apiCredsRef.current): ApiCredentials | null => {
+    const cleanId = Number(credsToCheck?.apiId) || 0;
+    const cleanHash = String(credsToCheck?.apiHash || '').trim();
+    const effective: ApiCredentials = { apiId: cleanId, apiHash: cleanHash };
+    if (!isValidApiCreds(effective)) {
       setForceShowApiBox(true);
       setAuthError(
         lang === 'fa'
-          ? 'برای اتصال به تلگرام، وارد کردن API ID و API Hash از my.telegram.org الزامی است.'
-          : 'Please enter your Telegram API ID and API Hash from my.telegram.org.',
+          ? 'برای اتصال به تلگرام، وارد کردن API ID و API Hash معتبر از my.telegram.org الزامی است.'
+          : 'Please enter your valid Telegram API ID and API Hash from my.telegram.org.',
       );
       return null;
     }
     setForceShowApiBox(false);
-    return credsToCheck;
+    return effective;
   };
 
   const _unusedValidate = (credsToCheck: ApiCredentials = apiCreds): ApiCredentials | null => {
@@ -497,12 +513,12 @@ export function App() {
   };
 
   const handleStartQr = useCallback(async () => {
-    const creds = validateApiCreds();
+    const creds = validateApiCreds(apiCredsRef.current);
     if (!creds) return;
     setAuthError(null);
     setAuthStep('connecting');
     try {
-      await telegramBridge.init(creds, network);
+      await telegramBridge.init(creds, networkRef.current);
       await telegramBridge.startQr();
     } catch (err) {
       setAuthStep('idle');
@@ -515,15 +531,15 @@ export function App() {
           : rawMsg
       );
     }
-  }, [lang, network]);
+  }, [lang]);
 
   const handleSendCode = useCallback(async (phone: string) => {
-    const creds = validateApiCreds();
+    const creds = validateApiCreds(apiCredsRef.current);
     if (!creds) return;
     setAuthError(null);
     setAuthStep('connecting');
     try {
-      await telegramBridge.init(creds, network);
+      await telegramBridge.init(creds, networkRef.current);
       const res = await telegramBridge.sendCode(phone.trim());
       if (res.alreadyAuthorized) {
         await handleAuthorized();
@@ -542,7 +558,7 @@ export function App() {
           : rawMsg
       );
     }
-  }, [handleAuthorized, lang, network]);
+  }, [handleAuthorized, lang]);
 
   const handleVerifyCode = useCallback(async (code: string) => {
     setAuthError(null);

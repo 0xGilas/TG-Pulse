@@ -676,9 +676,12 @@ async function ensureClientInitialized(
   const wsCtor = createTransportWebSocket(network);
   const transport = new WebSocketTransport({ ws: wsCtor });
 
+  const cleanApiId = Number(apiCreds.apiId) || 0;
+  const cleanApiHash = String(apiCreds.apiHash || '').trim();
+
   tgClient = new TelegramClient({
-    apiId: apiCreds.apiId,
-    apiHash: apiCreds.apiHash,
+    apiId: cleanApiId,
+    apiHash: cleanApiHash,
     storage: new MemoryStorage(),
     transport,
   });

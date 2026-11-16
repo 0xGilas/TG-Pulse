@@ -22,6 +22,7 @@ import type {
   SessionPersistenceMode,
 } from '../../types/analytics';
 import { getTranslations } from '../../i18n/translations';
+import { normalizePinDigits } from '../../utils/cryptoVault';
 import { BrandLogo } from '../common/BrandLogo';
 import { PasswordField } from '../common/PasswordField';
 
@@ -443,11 +444,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = React.memo(({
                           <input
                             ref={apiIdRef}
                             id="api-id-input"
-                            type="number"
-                            value={apiCreds.apiId || ''}
-                            onChange={(e) =>
-                              onChangeApiCreds({ ...apiCreds, apiId: Number(e.target.value) || 0 })
-                            }
+                            type="text"
+                            inputMode="numeric"
+                            value={apiCreds.apiId ? String(apiCreds.apiId) : ''}
+                            onChange={(e) => {
+                              const cleanDigits = normalizePinDigits(e.target.value).replace(/\D/g, '');
+                              onChangeApiCreds({ ...apiCreds, apiId: cleanDigits ? parseInt(cleanDigits, 10) : 0 });
+                            }}
                             placeholder="e.g. 12345678"
                             dir="ltr"
                             className="w-full rounded-lg border border-white/12 bg-[#0B0F14] px-3 py-2 text-xs text-[#F0F4F8] font-mono-num focus:border-[#2AABEE] focus:outline-none focus:ring-2 focus:ring-[#2AABEE]/25"
